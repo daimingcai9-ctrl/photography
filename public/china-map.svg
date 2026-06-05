@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 700">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" style="stop-color:#1e2230"/>
+      <stop offset="100%" style="stop-color:#0a0c14"/>
+    </radialGradient>
+  </defs>
+  <rect width="800" height="700" fill="url(#bg)"/>
+
+  <!-- Subtle grid -->
+  <g stroke="rgba(255,255,255,0.04)" stroke-width="0.5">
+    <line x1="0" y1="175" x2="800" y2="175"/><line x1="200" y1="0" x2="200" y2="700"/>
+    <line x1="0" y1="350" x2="800" y2="350"/><line x1="400" y1="0" x2="400" y2="700"/>
+    <line x1="0" y1="525" x2="800" y2="525"/><line x1="600" y1="0" x2="600" y2="700"/>
+  </g>
+
+  <!-- Province outlines -->
+  <g fill="none" stroke-width="1" transform="scale(0.9) translate(45, 40)">
+    <!-- Xinjiang -->
+    <path d="M50,30 L120,20 L150,35 L170,55 L180,70 L175,95 L160,110 L140,120 L115,125 L90,118 L65,105 L45,90 L35,70 L38,50Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <!-- Tibet -->
+    <path d="M115,125 L140,120 L165,125 L185,135 L200,150 L195,170 L175,185 L150,190 L125,185 L105,170 L100,150 L105,135Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <!-- Qinghai -->
+    <path d="M165,125 L200,118 L240,120 L270,125 L285,140 L280,155 L260,160 L235,155 L210,148 L185,135Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <!-- Gansu -->
+    <path d="M240,120 L290,100 L320,95 L340,105 L335,120 L315,128 L285,130 L260,132 L240,125Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <!-- Inner Mongolia -->
+    <path d="M290,100 L340,70 L380,55 L420,50 L460,48 L490,55 L510,65 L500,80 L475,88 L440,92 L400,98 L370,105 L340,105Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <!-- Northeast (Heilongjiang + Jilin + Liaoning) -->
+    <path d="M460,48 L510,30 L540,25 L560,35 L570,50 L565,70 L555,85 L540,92 L520,88 L500,78 L480,72 L460,68Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <path d="M540,92 L555,100 L565,115 L560,130 L545,138 L525,135 L510,125 L515,108Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <!-- Hebei + Beijing + Tianjin -->
+    <path d="M460,68 L490,72 L510,82 L520,100 L530,115 L525,130 L510,135 L490,128 L475,118 L460,108 L455,90Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <circle cx="498" cy="105" r="4" fill="rgba(255,255,255,0.2)" stroke="rgba(255,255,255,0.3)" stroke-width="0.5"/>
+    <!-- Shanxi -->
+    <path d="M460,108 L475,118 L490,128 L485,142 L470,150 L455,148 L440,140 L438,125Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <!-- Shandong -->
+    <path d="M510,100 L530,108 L545,120 L555,135 L550,148 L540,155 L525,150 L515,140 L510,125Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <!-- Henan -->
+    <path d="M470,150 L490,148 L510,140 L525,150 L520,162 L505,172 L490,175 L472,170 L462,160Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <!-- Jiangsu + Shanghai -->
+    <path d="M540,155 L555,148 L570,155 L580,168 L575,180 L560,185 L545,178 L538,168Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <circle cx="565" cy="172" r="3" fill="rgba(255,255,255,0.2)" stroke="rgba(255,255,255,0.3)" stroke-width="0.5"/>
+    <!-- Anhui -->
+    <path d="M520,162 L535,170 L545,178 L540,190 L525,195 L510,190 L500,178 L505,170Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <!-- Hubei -->
+    <path d="M490,175 L510,178 L525,190 L525,205 L510,215 L492,212 L480,200 L478,188Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <!-- Hunan -->
+    <path d="M480,200 L510,205 L530,215 L535,232 L520,245 L500,248 L480,240 L470,225 L472,210Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <!-- Jiangxi -->
+    <path d="M540,200 L555,208 L568,220 L570,238 L558,248 L540,245 L532,235 L535,218Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <!-- Zhejiang -->
+    <path d="M575,190 L590,200 L598,218 L592,235 L578,240 L565,232 L558,220 L570,205Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <!-- Fujian -->
+    <path d="M558,248 L575,255 L582,272 L575,288 L560,292 L548,285 L545,270 L552,255Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <!-- Guangdong (incl HK / Macau) -->
+    <path d="M500,260 L520,255 L545,258 L558,272 L555,292 L542,308 L525,315 L508,310 L495,300 L492,282 L496,268Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <circle cx="530" cy="292" r="3" fill="rgba(255,255,255,0.2)" stroke="rgba(255,255,255,0.3)" stroke-width="0.5"/>
+    <!-- Guangxi -->
+    <path d="M445,275 L465,268 L492,268 L500,282 L498,302 L485,312 L468,315 L450,308 L440,295Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <!-- Guizhou -->
+    <path d="M445,240 L465,238 L480,245 L490,258 L488,272 L472,280 L455,278 L440,268 L438,252Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <!-- Yunnan -->
+    <path d="M370,250 L390,248 L415,252 L445,260 L442,275 L430,285 L410,290 L390,288 L370,280 L360,268Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <!-- Sichuan + Chongqing -->
+    <path d="M340,170 L370,165 L400,170 L430,180 L445,200 L448,225 L440,248 L425,250 L400,242 L375,235 L355,225 L335,210 L330,190Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <circle cx="405" cy="220" r="4" fill="rgba(255,255,255,0.2)" stroke="rgba(255,255,255,0.3)" stroke-width="0.5"/>
+    <!-- Shaanxi -->
+    <path d="M415,140 L440,135 L455,148 L462,160 L445,175 L420,178 L395,175 L380,168 L378,152 L395,145Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+    <!-- Ningxia -->
+    <path d="M395,130 L415,135 L420,148 L410,155 L392,150 L382,142Z" stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.015)"/>
+
+    <!-- Taiwan -->
+    <ellipse cx="615" cy="345" rx="4" ry="14" transform="rotate(-15 615 345)" fill="rgba(255,255,255,0.025)" stroke="rgba(255,255,255,0.15)" stroke-width="0.8"/>
+    <!-- Hainan -->
+    <ellipse cx="475" cy="365" rx="10" ry="8" fill="rgba(255,255,255,0.025)" stroke="rgba(255,255,255,0.15)" stroke-width="0.8"/>
+
+    <!-- South China Sea inset -->
+    <rect x="620" y="520" width="160" height="160" rx="8" fill="rgba(0,0,0,0.4)" stroke="rgba(255,255,255,0.1)" stroke-width="0.5"/>
+    <g transform="translate(660, 540) scale(0.25)">
+      <path d="M50,30 L150,20 L170,55 L175,95 L140,120 L115,125 L90,118 L45,90 L38,50Z" stroke="rgba(255,255,255,0.2)" fill="rgba(255,255,255,0.02)"/>
+      <ellipse cx="140" cy="200" rx="10" ry="8" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.2)"/>
+      <ellipse cx="90" cy="220" rx="10" ry="8" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.2)"/>
+    </g>
+
+    <!-- Compass -->
+    <g transform="translate(725, 30)">
+      <circle cx="0" cy="0" r="22" fill="rgba(0,0,0,0.5)" stroke="rgba(255,255,255,0.15)" stroke-width="0.8"/>
+      <text x="0" y="-6" text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="9" font-family="system-ui">N</text>
+      <polygon points="0,-12 -3,-2 3,-2" fill="rgba(255,255,255,0.5)"/>
+      <polygon points="0,12 -3,2 3,2" fill="rgba(255,255,255,0.2)"/>
+    </g>
+  </g>
+</svg>
