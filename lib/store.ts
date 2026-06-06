@@ -27,6 +27,15 @@ function saveEdits(edits: EditMap) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(edits));
 }
 
+export function getCustomPhotos(): Photo[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem("custom-photos") || "[]");
+  } catch {
+    return [];
+  }
+}
+
 /** Hook: loads photos with edits from localStorage, only after client mount */
 export function useEditedPhotos(): [Photo[], () => void] {
   const [photos, setPhotos] = useState<Photo[]>(getAllPhotos);
@@ -38,7 +47,11 @@ export function useEditedPhotos(): [Photo[], () => void] {
       if (!edit) return p;
       return { ...p, location: edit.location || p.location, title: edit.title || p.title, tags: edit.tags || p.tags };
     });
-    setPhotos(updated);
+    // Also merge in custom photos
+    const custom = getCustomPhotos();
+    const seen = new Set(updated.map((p) => p.id));
+    const merged = [...updated, ...custom.filter((p: Photo) => !seen.has(p.id))];
+    setPhotos(merged);
   }, []);
 
   useEffect(() => {
