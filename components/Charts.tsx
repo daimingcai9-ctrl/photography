@@ -22,7 +22,7 @@ import {
   getLocationStats,
   getCameraStats,
 } from "@/lib/analytics";
-import { getAllPhotos, Photo } from "@/lib/photos";
+import { getAllPhotos } from "@/lib/photos";
 import { COLOR_CATEGORY_COLORS, ColorCategory } from "@/lib/colors";
 
 const COLORS = [
