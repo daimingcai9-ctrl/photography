@@ -10,7 +10,6 @@
     "extract-colors": "npx tsx scripts/extract-colors.ts"
   },
   "dependencies": {
-    "@cloudflare/next-on-pages": "^1.13.16",
     "@types/leaflet": "^1.9.21",
     "colorthief": "^3.3.1",
     "framer-motion": "^12.40.0",
@@ -28,7 +27,6 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
-    "typescript": "^5",
-    "wrangler": "^4.98.0"
+    "typescript": "^5"
   }
 }
