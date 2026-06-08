@@ -81,8 +81,26 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
     onClose();
   };
 
-  const handleDelete = () => {
+  const isCustomPhoto = photo.id.startsWith("new-") || photo.id.startsWith("upload-");
+
+  const handleReset = () => {
     try {
+      const edits = JSON.parse(localStorage.getItem("photo-edits") || "{}");
+      delete edits[photo.id];
+      localStorage.setItem("photo-edits", JSON.stringify(edits));
+    } catch {}
+    onChange();
+    onClose();
+  };
+
+  const handleDelete = () => {
+    if (!confirm("确定要删除这张照片吗？")) return;
+    try {
+      // Remove from custom-photos
+      const customs = JSON.parse(localStorage.getItem("custom-photos") || "[]");
+      const filtered = customs.filter((p: any) => p.id !== photo.id);
+      localStorage.setItem("custom-photos", JSON.stringify(filtered));
+      // Remove any edits
       const edits = JSON.parse(localStorage.getItem("photo-edits") || "{}");
       delete edits[photo.id];
       localStorage.setItem("photo-edits", JSON.stringify(edits));
@@ -210,11 +228,19 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
             保存
           </button>
           <button
-            onClick={handleDelete}
-            className="px-4 py-2.5 bg-red-500/20 text-red-400 rounded-full text-sm hover:bg-red-500/30 transition-colors"
+            onClick={handleReset}
+            className="px-4 py-2.5 bg-white/10 text-white/60 rounded-full text-sm hover:bg-white/20 transition-colors"
           >
             重置
           </button>
+          {isCustomPhoto && (
+            <button
+              onClick={handleDelete}
+              className="px-4 py-2.5 bg-red-500/20 text-red-400 rounded-full text-sm hover:bg-red-500/30 transition-colors"
+            >
+              删除
+            </button>
+          )}
         </div>
       </div>
     </div>

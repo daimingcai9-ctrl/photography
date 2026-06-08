@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef } from "react";
-import exifr from "exifr";
 import { Photo } from "@/lib/photos";
 import { categorizeColor } from "@/lib/colors";
 import { savePhotoEdit } from "@/lib/store";
@@ -69,7 +68,8 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
 
   const parseExif = async (file: File) => {
     try {
-      const exif = await exifr.parse(file, {
+      const exifr = await import("exifr");
+      const exif = await exifr.default.parse(file, {
         pick: ["DateTimeOriginal", "CreateDate", "DateTime", "Make", "Model"],
       });
       if (!exif) { setExifLoaded(true); return; }

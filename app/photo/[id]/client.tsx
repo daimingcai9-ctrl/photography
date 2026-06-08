@@ -1,17 +1,21 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { getPhotoById } from "@/lib/photos";
+import { useEditedPhotos } from "@/lib/store";
 import { COLOR_CATEGORY_COLORS, ColorCategory } from "@/lib/colors";
 
 export default function PhotoDetailClient({ id }: { id: string }) {
   const router = useRouter();
-  const photo = getPhotoById(id);
+  const [photos] = useEditedPhotos();
+  const photo = photos.find((p) => p.id === id);
 
   if (!photo) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p className="text-white/60">照片未找到</p>
+        <div className="text-center">
+          <p className="text-white/60 mb-4">照片未找到</p>
+          <button onClick={() => router.back()} className="text-white/40 hover:text-white text-sm">← 返回</button>
+        </div>
       </div>
     );
   }
@@ -66,25 +70,35 @@ export default function PhotoDetailClient({ id }: { id: string }) {
                 <div className="flex justify-between">
                   <span className="text-white/60">设备</span><span className="text-white">{photo.camera}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-white/60">镜头</span><span className="text-white">{photo.lens}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-white/60">ISO</span><span className="text-white font-mono">{photo.iso}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-white/60">光圈</span><span className="text-white font-mono">{photo.aperture}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-white/60">快门</span><span className="text-white font-mono">{photo.shutter}</span>
-                </div>
+                {photo.lens && (
+                  <div className="flex justify-between">
+                    <span className="text-white/60">镜头</span><span className="text-white">{photo.lens}</span>
+                  </div>
+                )}
+                {photo.iso > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-white/60">ISO</span><span className="text-white font-mono">{photo.iso}</span>
+                  </div>
+                )}
+                {photo.aperture && (
+                  <div className="flex justify-between">
+                    <span className="text-white/60">光圈</span><span className="text-white font-mono">{photo.aperture}</span>
+                  </div>
+                )}
+                {photo.shutter && (
+                  <div className="flex justify-between">
+                    <span className="text-white/60">快门</span><span className="text-white font-mono">{photo.shutter}</span>
+                  </div>
+                )}
               </div>
             </div>
 
             <div className="bg-white/5 rounded-xl p-6 mb-6">
               <p className="text-sm text-white/50 mb-4">拍摄地点</p>
               <p className="text-lg text-white mb-2">{photo.location.name}</p>
-              <p className="text-sm text-white/40 font-mono">{photo.location.lat.toFixed(4)}°N, {photo.location.lng.toFixed(4)}°E</p>
+              {photo.location.lat !== 0 && (
+                <p className="text-sm text-white/40 font-mono">{photo.location.lat.toFixed(4)}°N, {photo.location.lng.toFixed(4)}°E</p>
+              )}
             </div>
 
             <div>
