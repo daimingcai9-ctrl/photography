@@ -60,7 +60,6 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
   const [lng, setLng] = useState(String(photo.location.lng || 0));
   const [title, setTitle] = useState(photo.title);
   const [camera, setCamera] = useState(photo.camera || "");
-  const [saved, setSaved] = useState(false);
 
   const handleSelectCity = (city: typeof CITY_SUGGESTIONS[number]) => {
     setLocationName(city.name);
@@ -78,9 +77,8 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
       title,
       camera: camera || undefined,
     });
-    setSaved(true);
     onChange();
-    setTimeout(() => setSaved(false), 1500);
+    onClose();
   };
 
   const handleDelete = () => {
@@ -209,7 +207,7 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
             onClick={handleSave}
             className="flex-1 py-2.5 bg-white text-black rounded-full text-sm font-medium hover:bg-white/90 transition-colors"
           >
-            {saved ? "✓ 已保存" : "保存"}
+            保存
           </button>
           <button
             onClick={handleDelete}
