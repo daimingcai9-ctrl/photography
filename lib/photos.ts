@@ -23,60 +23,65 @@ export interface Photo {
   tags: string[];
 }
 
+/** Read custom photos from localStorage */
+function getCustomPhotos(): Photo[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem("custom-photos") || "[]");
+  } catch {
+    return [];
+  }
+}
+
 /**
- * Get all photos
+ * Get all photos — static photos.json + custom photos from localStorage.
+ * Deduplicates by id so the same photo is never returned twice.
  */
 export function getAllPhotos(): Photo[] {
-  return photosData.photos as Photo[];
+  const base = photosData.photos as Photo[];
+  const custom = getCustomPhotos();
+  if (custom.length === 0) return base;
+  const seen = new Set(base.map((p) => p.id));
+  return [...base, ...custom.filter((p) => !seen.has(p.id))];
 }
 
 /**
  * Get photo by ID
  */
 export function getPhotoById(id: string): Photo | undefined {
-  return photosData.photos.find((p) => p.id === id) as Photo | undefined;
+  return getAllPhotos().find((p) => p.id === id);
 }
 
 /**
  * Get photos by color category
  */
 export function getPhotosByColor(category: ColorCategory): Photo[] {
-  return photosData.photos.filter((p) => p.colorCategory === category) as Photo[];
+  return getAllPhotos().filter((p) => p.colorCategory === category);
 }
 
 /**
  * Get photos by location name
  */
 export function getPhotosByLocation(locationName: string): Photo[] {
-  return photosData.photos.filter(
-    (p) => p.location.name === locationName
-  ) as Photo[];
+  return getAllPhotos().filter((p) => p.location.name === locationName);
 }
 
 /**
  * Get all unique locations
  */
 export function getUniqueLocations(): string[] {
-  const locations = new Set(
-    photosData.photos.map((p) => (p as Photo).location.name)
-  );
-  return Array.from(locations);
+  return [...new Set(getAllPhotos().map((p) => p.location.name))];
 }
 
 /**
  * Get photos grouped by color category
  */
 export function getPhotosGroupedByColor(): Record<ColorCategory, Photo[]> {
-  const photos = getAllPhotos();
   const grouped: Partial<Record<ColorCategory, Photo[]>> = {};
-
-  for (const photo of photos) {
-    if (!grouped[photo.colorCategory]) {
-      grouped[photo.colorCategory] = [];
-    }
+  for (const photo of getAllPhotos()) {
+    if (!grouped[photo.colorCategory]) grouped[photo.colorCategory] = [];
     grouped[photo.colorCategory]!.push(photo);
   }
-
   return grouped as Record<ColorCategory, Photo[]>;
 }
 
@@ -84,15 +89,10 @@ export function getPhotosGroupedByColor(): Record<ColorCategory, Photo[]> {
  * Get photos grouped by location
  */
 export function getPhotosGroupedByLocation(): Record<string, Photo[]> {
-  const photos = getAllPhotos();
   const grouped: Record<string, Photo[]> = {};
-
-  for (const photo of photos) {
-    if (!grouped[photo.location.name]) {
-      grouped[photo.location.name] = [];
-    }
+  for (const photo of getAllPhotos()) {
+    if (!grouped[photo.location.name]) grouped[photo.location.name] = [];
     grouped[photo.location.name].push(photo);
   }
-
   return grouped;
 }
