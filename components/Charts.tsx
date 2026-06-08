@@ -194,6 +194,7 @@ export function CameraChart() {
             fill="#8884d8"
             paddingAngle={5}
             dataKey="count"
+            nameKey="camera"
           >
             {data.map((_, index) => (
               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
