@@ -1,5 +1,3 @@
-"use client";
-
 import { getAllPhotos } from "@/lib/photos";
 import {
   MonthlyChart,
