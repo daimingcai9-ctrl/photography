@@ -9,6 +9,7 @@ interface PhotoEdit {
   location?: { name: string; lat: number; lng: number };
   title?: string;
   tags?: string[];
+  camera?: string;
 }
 
 type EditMap = Record<string, PhotoEdit>;
@@ -39,7 +40,7 @@ export function useEditedPhotos(): [Photo[], () => void] {
     const all = getAllPhotos().map((p) => {
       const edit = edits[p.id];
       if (!edit) return p;
-      return { ...p, location: edit.location || p.location, title: edit.title || p.title, tags: edit.tags || p.tags };
+      return { ...p, location: edit.location || p.location, title: edit.title || p.title, tags: edit.tags || p.tags, camera: edit.camera || p.camera };
     });
     setPhotos(all);
   }, []);

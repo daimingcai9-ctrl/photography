@@ -4,6 +4,26 @@ import { useState } from "react";
 import { Photo } from "@/lib/photos";
 import { savePhotoEdit } from "@/lib/store";
 
+// Common camera models
+const CAMERA_OPTIONS = [
+  { label: "Nikon Z30", value: "NIKON Z30" },
+  { label: "Nikon Z50", value: "NIKON Z50" },
+  { label: "Nikon Z5", value: "NIKON Z5" },
+  { label: "Nikon Z6 III", value: "NIKON Z6III" },
+  { label: "Nikon Zf", value: "NIKON Zf" },
+  { label: "Xiaomi 15", value: "Xiaomi 15" },
+  { label: "Xiaomi 15 Pro", value: "Xiaomi 15 Pro" },
+  { label: "Xiaomi 14", value: "Xiaomi 14" },
+  { label: "Sony A7M4", value: "ILCE-7M4" },
+  { label: "Sony A7C II", value: "ILCE-7CM2" },
+  { label: "Canon R6 II", value: "Canon EOS R6 Mark II" },
+  { label: "Canon R50", value: "Canon EOS R50" },
+  { label: "Fuji X-T5", value: "X-T5" },
+  { label: "Fuji X100VI", value: "X100VI" },
+  { label: "iPhone 16 Pro", value: "iPhone 16 Pro" },
+  { label: "iPhone 15 Pro", value: "iPhone 15 Pro" },
+];
+
 // Common Chinese cities with coordinates
 const CITY_SUGGESTIONS = [
   { name: "重庆", lat: 29.56, lng: 106.55 },
@@ -39,6 +59,7 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
   const [lat, setLat] = useState(String(photo.location.lat || 0));
   const [lng, setLng] = useState(String(photo.location.lng || 0));
   const [title, setTitle] = useState(photo.title);
+  const [camera, setCamera] = useState(photo.camera || "");
   const [saved, setSaved] = useState(false);
 
   const handleSelectCity = (city: typeof CITY_SUGGESTIONS[number]) => {
@@ -55,6 +76,7 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
         lng: parseFloat(lng) || 0,
       },
       title,
+      camera: camera || undefined,
     });
     setSaved(true);
     onChange();
@@ -98,6 +120,31 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
             onChange={(e) => setTitle(e.target.value)}
             className="w-full bg-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:ring-1 focus:ring-white/30"
           />
+        </div>
+
+        {/* Camera */}
+        <div className="mb-4">
+          <label className="text-xs text-white/40 mb-1 block">拍摄设备</label>
+          <input
+            type="text"
+            value={camera}
+            onChange={(e) => setCamera(e.target.value)}
+            placeholder="选择或输入设备型号"
+            className="w-full bg-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:ring-1 focus:ring-white/30 mb-2"
+          />
+          <div className="flex flex-wrap gap-1.5">
+            {CAMERA_OPTIONS.map((c) => (
+              <button
+                key={c.value}
+                onClick={() => setCamera(c.value)}
+                className={`px-2.5 py-1 rounded-full text-xs transition-colors ${
+                  camera === c.value ? "bg-white/20 text-white" : "bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70"
+                }`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* City quick select */}
