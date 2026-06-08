@@ -1,4 +1,6 @@
-import { getAllPhotos } from "@/lib/photos";
+"use client";
+
+import { useEditedPhotos } from "@/lib/store";
 import {
   MonthlyChart,
   SeasonChart,
@@ -8,7 +10,7 @@ import {
 } from "@/components/Charts";
 
 export default function AnalyticsPage() {
-  const allPhotos = getAllPhotos();
+  const [allPhotos] = useEditedPhotos();
 
   const uniqueLocations = new Set(allPhotos.map((p) => p.location.name)).size;
   const uniqueCameras = new Set(allPhotos.map((p) => p.camera)).size;

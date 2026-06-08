@@ -13,18 +13,7 @@ export default function GalleryPage() {
   const [selectedCategory, setSelectedCategory] = useState<ColorCategory | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [basePhotos, reload] = useEditedPhotos();
-
-  // Merge custom photos from localStorage
-  const allPhotos = useMemo(() => {
-    let custom: Photo[] = [];
-    try {
-      custom = JSON.parse(localStorage.getItem("custom-photos") || "[]");
-    } catch {}
-    // Dedupe by id
-    const seen = new Set(basePhotos.map((p) => p.id));
-    return [...basePhotos, ...custom.filter((p: Photo) => !seen.has(p.id))];
-  }, [basePhotos]);
+  const [allPhotos, reload] = useEditedPhotos();
 
   const filteredPhotos = useMemo(() => {
     if (!selectedCategory) return allPhotos;

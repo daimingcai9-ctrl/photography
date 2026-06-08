@@ -1,8 +1,10 @@
+"use client";
+
 import Hero from "@/components/Hero";
-import { getAllPhotos } from "@/lib/photos";
+import { useEditedPhotos } from "@/lib/store";
 
 export default function Home() {
-  const allPhotos = getAllPhotos();
+  const [allPhotos] = useEditedPhotos();
 
   return (
     <div className="h-screen overflow-y-scroll snap-y snap-mandatory">

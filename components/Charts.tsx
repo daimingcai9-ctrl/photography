@@ -22,7 +22,7 @@ import {
   getLocationStats,
   getCameraStats,
 } from "@/lib/analytics";
-import { getAllPhotos } from "@/lib/photos";
+import { useEditedPhotos } from "@/lib/store";
 import { COLOR_CATEGORY_COLORS, ColorCategory } from "@/lib/colors";
 
 const COLORS = [
@@ -41,7 +41,7 @@ const COLORS = [
 ];
 
 export function MonthlyChart() {
-  const photos = getAllPhotos();
+  const [photos] = useEditedPhotos();
   const data = getPhotosByMonth(photos);
 
   return (
@@ -75,7 +75,7 @@ export function MonthlyChart() {
 }
 
 export function SeasonChart() {
-  const photos = getAllPhotos();
+  const [photos] = useEditedPhotos();
   const data = getPhotosBySeason(photos);
 
   return (
@@ -106,7 +106,7 @@ export function SeasonChart() {
 }
 
 export function ColorChart() {
-  const photos = getAllPhotos();
+  const [photos] = useEditedPhotos();
   const data = getColorDistribution(photos);
 
   return (
@@ -146,7 +146,7 @@ export function ColorChart() {
 }
 
 export function LocationChart() {
-  const photos = getAllPhotos();
+  const [photos] = useEditedPhotos();
   const data = getLocationStats(photos);
 
   return (
@@ -177,7 +177,7 @@ export function LocationChart() {
 }
 
 export function CameraChart() {
-  const photos = getAllPhotos();
+  const [photos] = useEditedPhotos();
   const data = getCameraStats(photos);
 
   return (
