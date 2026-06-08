@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import exifr from "exifr";
 import { Photo } from "@/lib/photos";
 import { categorizeColor } from "@/lib/colors";
 import { savePhotoEdit } from "@/lib/store";
@@ -25,13 +26,33 @@ const CITY_OPTIONS = [
   { name: "昆明", lat: 25.04, lng: 102.70 },
 ];
 
+// Common camera models
+const CAMERA_OPTIONS = [
+  { label: "Nikon Z30", value: "NIKON Z30" },
+  { label: "Nikon Z50", value: "NIKON Z50" },
+  { label: "Nikon Z5", value: "NIKON Z5" },
+  { label: "Nikon Z6 III", value: "NIKON Z6III" },
+  { label: "Nikon Zf", value: "NIKON Zf" },
+  { label: "Xiaomi 15", value: "Xiaomi 15" },
+  { label: "Xiaomi 15 Pro", value: "Xiaomi 15 Pro" },
+  { label: "Xiaomi 14", value: "Xiaomi 14" },
+  { label: "Sony A7M4", value: "ILCE-7M4" },
+  { label: "Sony A7C II", value: "ILCE-7CM2" },
+  { label: "Canon R6 II", value: "Canon EOS R6 Mark II" },
+  { label: "Canon R50", value: "Canon EOS R50" },
+  { label: "Fuji X-T5", value: "X-T5" },
+  { label: "Fuji X100VI", value: "X100VI" },
+  { label: "iPhone 16 Pro", value: "iPhone 16 Pro" },
+  { label: "iPhone 15 Pro", value: "iPhone 15 Pro" },
+];
+
 interface AddPhotoModalProps {
   onClose: () => void;
   onAdd: (photo: Photo) => void;
 }
 
 export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
-  const [imageUrl, setImageUrl] = useState(""); // data URL from file or URL input
+  const [imageUrl, setImageUrl] = useState("");
   const [title, setTitle] = useState("");
   const [city, setCity] = useState(CITY_OPTIONS[0]);
   const [camera, setCamera] = useState("");
@@ -40,6 +61,7 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
   const [dragging, setDragging] = useState(false);
   const [useUrl, setUseUrl] = useState(false);
   const [urlInput, setUrlInput] = useState("");
+  const [exifLoaded, setExifLoaded] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const extractColor = async (src: string): Promise<string> => {
@@ -65,14 +87,54 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
     return color;
   };
 
+  const parseExif = async (file: File) => {
+    try {
+      const exif = await exifr.parse(file, {
+        pick: ["DateTimeOriginal", "CreateDate", "DateTime", "Make", "Model"],
+      });
+      if (!exif) { setExifLoaded(true); return; }
+
+      // Date
+      const exifDate = exif.DateTimeOriginal || exif.CreateDate || exif.DateTime;
+      if (exifDate instanceof Date && !isNaN(exifDate.getTime())) {
+        setDate(exifDate.toISOString().slice(0, 10));
+      }
+
+      // Camera model
+      const make = exif.Make || "";
+      const model = exif.Model || "";
+      if (model) {
+        // Clean up: some cameras store "NIKON CORPORATION" as Make and "NIKON Z30" as Model
+        const cleanModel = model.trim();
+        setCamera(cleanModel);
+
+        // Auto-generate title from date + model
+        const dateStr = exifDate instanceof Date && !isNaN(exifDate.getTime())
+          ? exifDate.toISOString().slice(0, 10)
+          : new Date().toISOString().slice(0, 10);
+        setTitle(`${dateStr} ${cleanModel}`);
+      } else {
+        // No EXIF camera info — auto-title with date only
+        const dateStr = exifDate instanceof Date && !isNaN(exifDate.getTime())
+          ? exifDate.toISOString().slice(0, 10)
+          : new Date().toISOString().slice(0, 10);
+        setTitle(dateStr);
+      }
+    } catch {
+      // EXIF parsing failed, use defaults
+      setTitle(new Date().toISOString().slice(0, 10));
+    }
+    setExifLoaded(true);
+  };
+
   const handleFile = (file: File) => {
     if (!file.type.startsWith("image/")) return;
     const reader = new FileReader();
     reader.onload = (e) => {
-      const result = e.target?.result as string;
-      setImageUrl(result);
+      setImageUrl(e.target?.result as string);
     };
     reader.readAsDataURL(file);
+    parseExif(file);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -88,7 +150,11 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
   };
 
   const handleUrlConfirm = () => {
-    if (urlInput.trim()) setImageUrl(urlInput.trim());
+    if (urlInput.trim()) {
+      setImageUrl(urlInput.trim());
+      setTitle(new Date().toISOString().slice(0, 10));
+      setExifLoaded(true);
+    }
   };
 
   const handleAdd = async () => {
@@ -107,7 +173,7 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
       dominantColor: color,
       palette: [color, color, color, color],
       colorCategory: categorizeColor(color),
-      camera: camera || "手动添加",
+      camera: camera || "未知",
       lens: "",
       iso: 0,
       aperture: "",
@@ -184,12 +250,15 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
             <div className="aspect-video rounded-xl overflow-hidden bg-black/50 relative group">
               <img src={imageUrl} alt="preview" className="w-full h-full object-cover" />
               <button
-                onClick={() => setImageUrl("")}
+                onClick={() => { setImageUrl(""); setExifLoaded(false); setCamera(""); setTitle(""); }}
                 className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 text-white/80 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 &times;
               </button>
             </div>
+            {imageUrl && !exifLoaded && (
+              <p className="text-white/40 text-xs mt-2 text-center">正在读取 EXIF 信息...</p>
+            )}
           </div>
         )}
 
@@ -201,6 +270,17 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="给照片取个名字"
+            className="w-full bg-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:ring-1 focus:ring-white/30"
+          />
+        </div>
+
+        {/* Date */}
+        <div className="mb-4">
+          <label className="text-xs text-white/40 mb-1 block">拍摄日期</label>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
             className="w-full bg-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:ring-1 focus:ring-white/30"
           />
         </div>
@@ -225,25 +305,27 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
 
         {/* Camera */}
         <div className="mb-4">
-          <label className="text-xs text-white/40 mb-1 block">相机（可选）</label>
+          <label className="text-xs text-white/40 mb-1 block">拍摄设备</label>
           <input
             type="text"
             value={camera}
             onChange={(e) => setCamera(e.target.value)}
-            placeholder="Sony A7M4"
-            className="w-full bg-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:ring-1 focus:ring-white/30"
+            placeholder="选择或输入设备型号"
+            className="w-full bg-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:ring-1 focus:ring-white/30 mb-2"
           />
-        </div>
-
-        {/* Date */}
-        <div className="mb-6">
-          <label className="text-xs text-white/40 mb-1 block">拍摄日期</label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-full bg-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:ring-1 focus:ring-white/30"
-          />
+          <div className="flex flex-wrap gap-1.5">
+            {CAMERA_OPTIONS.map((c) => (
+              <button
+                key={c.value}
+                onClick={() => setCamera(c.value)}
+                className={`px-2.5 py-1 rounded-full text-xs transition-colors ${
+                  camera === c.value ? "bg-white/20 text-white" : "bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70"
+                }`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <button
