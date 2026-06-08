@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "extract-colors": "npx tsx scripts/extract-colors.ts"
+    "extract-colors": "npx tsx scripts/extract-colors.ts",
+    "upload-server": "npx tsx scripts/upload-server.ts"
   },
   "dependencies": {
     "@types/leaflet": "^1.9.21",

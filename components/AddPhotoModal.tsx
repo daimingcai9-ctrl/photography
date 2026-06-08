@@ -52,7 +52,7 @@ interface AddPhotoModalProps {
 }
 
 export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
-  const [imageUrl, setImageUrl] = useState("");
+  const [imageUrl, setImageUrl] = useState("");       // compressed, for preview
   const [title, setTitle] = useState("");
   const [city, setCity] = useState(CITY_OPTIONS[0]);
   const [camera, setCamera] = useState("");
@@ -63,30 +63,9 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
   const [urlInput, setUrlInput] = useState("");
   const [exifLoaded, setExifLoaded] = useState(false);
   const [error, setError] = useState("");
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  const extractColor = async (src: string): Promise<string> => {
-    let color = "#888888";
-    try {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      await new Promise<void>((resolve) => {
-        img.onload = () => resolve();
-        img.onerror = () => resolve();
-        img.src = src;
-      });
-      const canvas = document.createElement("canvas");
-      canvas.width = 1;
-      canvas.height = 1;
-      const ctx = canvas.getContext("2d");
-      if (ctx && img.naturalWidth > 0) {
-        ctx.drawImage(img, 0, 0, 1, 1);
-        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-        color = "#" + [r, g, b].map((x) => x.toString(16).padStart(2, "0")).join("");
-      }
-    } catch {}
-    return color;
-  };
+  const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "done" | "fallback">("idle");
+  const originalFileRef = useRef<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const parseExif = async (file: File) => {
     try {
@@ -95,74 +74,76 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
       });
       if (!exif) { setExifLoaded(true); return; }
 
-      // Date
       const exifDate = exif.DateTimeOriginal || exif.CreateDate || exif.DateTime;
       if (exifDate instanceof Date && !isNaN(exifDate.getTime())) {
         setDate(exifDate.toISOString().slice(0, 10));
       }
 
-      // Camera model
-      const make = exif.Make || "";
       const model = exif.Model || "";
       if (model) {
-        // Clean up: some cameras store "NIKON CORPORATION" as Make and "NIKON Z30" as Model
-        const cleanModel = model.trim();
-        setCamera(cleanModel);
-
-        // Auto-generate title from date + model
+        setCamera(model.trim());
         const dateStr = exifDate instanceof Date && !isNaN(exifDate.getTime())
           ? exifDate.toISOString().slice(0, 10)
           : new Date().toISOString().slice(0, 10);
-        setTitle(`${dateStr} ${cleanModel}`);
+        setTitle(`${dateStr} ${model.trim()}`);
       } else {
-        // No EXIF camera info — auto-title with date only
         const dateStr = exifDate instanceof Date && !isNaN(exifDate.getTime())
           ? exifDate.toISOString().slice(0, 10)
           : new Date().toISOString().slice(0, 10);
         setTitle(dateStr);
       }
     } catch {
-      // EXIF parsing failed, use defaults
       setTitle(new Date().toISOString().slice(0, 10));
     }
     setExifLoaded(true);
   };
 
-  const compressImage = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
+  /** Read file as data URL */
+  const readAsDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          const MAX = 1200;
-          let w = img.naturalWidth;
-          let h = img.naturalHeight;
-          if (w > MAX || h > MAX) {
-            if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
-            else { w = Math.round(w * MAX / h); h = MAX; }
-          }
-          const canvas = document.createElement("canvas");
-          canvas.width = w;
-          canvas.height = h;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) { resolve(e.target?.result as string); return; }
-          ctx.drawImage(img, 0, 0, w, h);
-          resolve(canvas.toDataURL("image/jpeg", 0.7));
-        };
-        img.onerror = () => resolve(e.target?.result as string);
-        img.src = e.target?.result as string;
-      };
-      reader.onerror = () => resolve("");
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = () => reject(new Error("文件读取失败"));
       reader.readAsDataURL(file);
+    });
+  };
+
+  /** Compress image for preview (max 1200px, JPEG 70%) */
+  const compressForPreview = (dataUrl: string): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1200;
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (w > MAX || h > MAX) {
+          if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+          else { w = Math.round(w * MAX / h); h = MAX; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { resolve(dataUrl); return; }
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", 0.7));
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
     });
   };
 
   const handleFile = async (file: File) => {
     if (!file.type.startsWith("image/")) return;
     setError("");
-    const compressed = await compressImage(file);
-    if (!compressed) { setError("图片读取失败"); return; }
-    setImageUrl(compressed);
+    originalFileRef.current = file;
+    try {
+      const original = await readAsDataUrl(file);
+      const compressed = await compressForPreview(original);
+      setImageUrl(compressed);
+    } catch {
+      setError("图片读取失败");
+      return;
+    }
     parseExif(file);
   };
 
@@ -183,6 +164,53 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
       setImageUrl(urlInput.trim());
       setTitle(new Date().toISOString().slice(0, 10));
       setExifLoaded(true);
+      originalFileRef.current = null; // no original file for URL mode
+    }
+  };
+
+  /** Upload original to server → save to public/photos/ + generate thumbnail + update photos.json */
+  const uploadToServer = async (): Promise<Photo | null> => {
+    const file = originalFileRef.current;
+    if (!file) return null;
+
+    setUploadStatus("uploading");
+    try {
+      const originalDataUrl = await readAsDataUrl(file);
+      const resp = await fetch("http://localhost:3001/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dataUrl: originalDataUrl,
+          title,
+          date,
+          city,
+          camera: camera || undefined,
+        }),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error(err.error);
+      }
+
+      const result = await resp.json();
+      setUploadStatus("done");
+      return result.photo as Photo;
+    } catch (err: any) {
+      console.warn("Upload server unavailable, falling back to localStorage:", err.message);
+      setUploadStatus("fallback");
+      return null;
+    }
+  };
+
+  /** Fallback: save compressed image to localStorage */
+  const saveToLocalStorage = (photo: Photo) => {
+    try {
+      const existing = JSON.parse(localStorage.getItem("custom-photos") || "[]");
+      existing.push(photo);
+      localStorage.setItem("custom-photos", JSON.stringify(existing));
+    } catch {
+      throw new Error("localStorage 保存失败，存储空间可能已满");
     }
   };
 
@@ -190,10 +218,22 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
     if (!imageUrl || !title.trim()) return;
     setAdding(true);
     setError("");
+    setUploadStatus("idle");
 
-    const color = await extractColor(imageUrl);
+    // Try uploading original to server
+    const serverPhoto = await uploadToServer();
+
+    if (serverPhoto) {
+      // Server processed it — photo is in public/photos/, thumbnail generated, photos.json updated
+      onAdd(serverPhoto);
+      onClose();
+      return;
+    }
+
+    // Fallback: save compressed to localStorage
+    const color = "#888888"; // will be extracted by getAllPhotos flow
     const id = "new-" + Date.now();
-    const newPhoto: Photo = {
+    const fallbackPhoto: Photo = {
       id,
       url: imageUrl,
       thumbnail: imageUrl,
@@ -211,23 +251,16 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
       tags: [categorizeColor(color)],
     };
 
-    savePhotoEdit(id, {
-      location: city,
-      title,
-      tags: [categorizeColor(color)],
-    });
-
     try {
-      const existing = JSON.parse(localStorage.getItem("custom-photos") || "[]");
-      existing.push(newPhoto);
-      localStorage.setItem("custom-photos", JSON.stringify(existing));
-    } catch (e) {
+      savePhotoEdit(id, { location: city, title, tags: [categorizeColor(color)] });
+      saveToLocalStorage(fallbackPhoto);
+    } catch (e: any) {
       setAdding(false);
-      setError("保存失败：存储空间可能已满，请删除一些旧照片后重试");
+      setError(e.message);
       return;
     }
 
-    onAdd(newPhoto);
+    onAdd(fallbackPhoto);
     onClose();
   };
 
@@ -254,9 +287,9 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
                 onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
                 onDragLeave={() => setDragging(false)}
                 onDrop={handleDrop}
-                onClick={() => fileRef.current?.click()}
+                onClick={() => fileInputRef.current?.click()}
               >
-                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
+                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
                 <div className="text-3xl mb-2">📷</div>
                 <p className="text-white/60 text-sm">拖拽照片到这里，或点击选择文件</p>
                 <p className="text-white/30 text-xs mt-1">支持 JPG、PNG、WebP 等格式</p>
@@ -285,7 +318,7 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
             <div className="aspect-video rounded-xl overflow-hidden bg-black/50 relative group">
               <img src={imageUrl} alt="preview" className="w-full h-full object-cover" />
               <button
-                onClick={() => { setImageUrl(""); setExifLoaded(false); setCamera(""); setTitle(""); }}
+                onClick={() => { setImageUrl(""); setExifLoaded(false); setCamera(""); setTitle(""); originalFileRef.current = null; }}
                 className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 text-white/80 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 &times;
@@ -366,6 +399,12 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
         {error && (
           <p className="text-red-400 text-xs mb-3 text-center">{error}</p>
         )}
+        {uploadStatus === "uploading" && (
+          <p className="text-white/40 text-xs mb-3 text-center">正在上传原图并生成缩略图...</p>
+        )}
+        {uploadStatus === "fallback" && (
+          <p className="text-yellow-400/70 text-xs mb-3 text-center">上传服务未运行，已保存压缩版到浏览器缓存。启动上传服务后可保存原图到 git。</p>
+        )}
 
         <button
           onClick={handleAdd}
@@ -374,6 +413,10 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
         >
           {adding ? "添加中..." : "添加照片"}
         </button>
+
+        <p className="text-white/20 text-[10px] text-center mt-3">
+          上传服务运行时：原图保存到 public/photos/ + 自动生成缩略图 + 写入 photos.json
+        </p>
       </div>
     </div>
   );
