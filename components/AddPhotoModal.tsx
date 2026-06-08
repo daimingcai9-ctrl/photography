@@ -62,6 +62,7 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
   const [useUrl, setUseUrl] = useState(false);
   const [urlInput, setUrlInput] = useState("");
   const [exifLoaded, setExifLoaded] = useState(false);
+  const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const extractColor = async (src: string): Promise<string> => {
@@ -127,13 +128,41 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
     setExifLoaded(true);
   };
 
-  const handleFile = (file: File) => {
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX = 1200;
+          let w = img.naturalWidth;
+          let h = img.naturalHeight;
+          if (w > MAX || h > MAX) {
+            if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+            else { w = Math.round(w * MAX / h); h = MAX; }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) { resolve(e.target?.result as string); return; }
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL("image/jpeg", 0.7));
+        };
+        img.onerror = () => resolve(e.target?.result as string);
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => resolve("");
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFile = async (file: File) => {
     if (!file.type.startsWith("image/")) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setImageUrl(e.target?.result as string);
-    };
-    reader.readAsDataURL(file);
+    setError("");
+    const compressed = await compressImage(file);
+    if (!compressed) { setError("图片读取失败"); return; }
+    setImageUrl(compressed);
     parseExif(file);
   };
 
@@ -160,6 +189,7 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
   const handleAdd = async () => {
     if (!imageUrl || !title.trim()) return;
     setAdding(true);
+    setError("");
 
     const color = await extractColor(imageUrl);
     const id = "new-" + Date.now();
@@ -186,11 +216,16 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
       title,
       tags: [categorizeColor(color)],
     });
+
     try {
       const existing = JSON.parse(localStorage.getItem("custom-photos") || "[]");
       existing.push(newPhoto);
       localStorage.setItem("custom-photos", JSON.stringify(existing));
-    } catch {}
+    } catch (e) {
+      setAdding(false);
+      setError("保存失败：存储空间可能已满，请删除一些旧照片后重试");
+      return;
+    }
 
     onAdd(newPhoto);
     onClose();
@@ -327,6 +362,10 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
             ))}
           </div>
         </div>
+
+        {error && (
+          <p className="text-red-400 text-xs mb-3 text-center">{error}</p>
+        )}
 
         <button
           onClick={handleAdd}
