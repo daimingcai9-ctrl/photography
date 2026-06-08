@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Photo, getAllPhotos } from "@/lib/photos";
+import { useState, useRef } from "react";
+import { Photo } from "@/lib/photos";
 import { categorizeColor } from "@/lib/colors";
 import { savePhotoEdit } from "@/lib/store";
 
@@ -31,29 +31,27 @@ interface AddPhotoModalProps {
 }
 
 export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
-  const [url, setUrl] = useState("");
+  const [imageUrl, setImageUrl] = useState(""); // data URL from file or URL input
   const [title, setTitle] = useState("");
   const [city, setCity] = useState(CITY_OPTIONS[0]);
   const [camera, setCamera] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [dominantColor, setDominantColor] = useState("#888888");
   const [adding, setAdding] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [useUrl, setUseUrl] = useState(false);
+  const [urlInput, setUrlInput] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const handleAdd = async () => {
-    if (!url.trim() || !title.trim()) return;
-    setAdding(true);
-
-    // Try to extract dominant color from the image
+  const extractColor = async (src: string): Promise<string> => {
     let color = "#888888";
     try {
       const img = new Image();
       img.crossOrigin = "anonymous";
-      await new Promise<void>((resolve, reject) => {
+      await new Promise<void>((resolve) => {
         img.onload = () => resolve();
-        img.onerror = () => resolve(); // proceed anyway
-        img.src = url;
+        img.onerror = () => resolve();
+        img.src = src;
       });
-
       const canvas = document.createElement("canvas");
       canvas.width = 1;
       canvas.height = 1;
@@ -63,15 +61,46 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
         const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
         color = "#" + [r, g, b].map((x) => x.toString(16).padStart(2, "0")).join("");
       }
-    } catch {
-      // fallback default color
-    }
+    } catch {}
+    return color;
+  };
 
+  const handleFile = (file: File) => {
+    if (!file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      setImageUrl(result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleFile(file);
+  };
+
+  const handleUrlConfirm = () => {
+    if (urlInput.trim()) setImageUrl(urlInput.trim());
+  };
+
+  const handleAdd = async () => {
+    if (!imageUrl || !title.trim()) return;
+    setAdding(true);
+
+    const color = await extractColor(imageUrl);
     const id = "new-" + Date.now();
     const newPhoto: Photo = {
       id,
-      url,
-      thumbnail: url,
+      url: imageUrl,
+      thumbnail: imageUrl,
       title,
       date,
       location: city,
@@ -86,13 +115,11 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
       tags: [categorizeColor(color)],
     };
 
-    // Save to localStorage
     savePhotoEdit(id, {
       location: city,
       title,
       tags: [categorizeColor(color)],
     });
-    // Also save full photo data
     try {
       const existing = JSON.parse(localStorage.getItem("custom-photos") || "[]");
       existing.push(newPhoto);
@@ -115,22 +142,54 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
           <button onClick={onClose} className="text-white/40 hover:text-white text-2xl leading-none">&times;</button>
         </div>
 
-        {/* URL */}
-        <div className="mb-4">
-          <label className="text-xs text-white/40 mb-1 block">图片 URL <span className="text-red-400">*</span></label>
-          <input
-            type="text"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://你的图床/照片.jpg"
-            className="w-full bg-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:ring-1 focus:ring-white/30"
-          />
-        </div>
-
-        {/* Preview */}
-        {url && (
-          <div className="aspect-video rounded-xl overflow-hidden mb-4 bg-black/50">
-            <img src={url} alt="preview" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+        {/* Drop zone or preview */}
+        {!imageUrl ? (
+          <>
+            {!useUrl ? (
+              <div
+                className={`mb-4 border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
+                  dragging ? "border-white/60 bg-white/10" : "border-white/20 hover:border-white/40"
+                }`}
+                onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={handleDrop}
+                onClick={() => fileRef.current?.click()}
+              >
+                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
+                <div className="text-3xl mb-2">📷</div>
+                <p className="text-white/60 text-sm">拖拽照片到这里，或点击选择文件</p>
+                <p className="text-white/30 text-xs mt-1">支持 JPG、PNG、WebP 等格式</p>
+              </div>
+            ) : (
+              <div className="mb-4">
+                <label className="text-xs text-white/40 mb-1 block">图片 URL</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={urlInput}
+                    onChange={(e) => setUrlInput(e.target.value)}
+                    placeholder="https://你的图床/照片.jpg"
+                    className="flex-1 bg-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:ring-1 focus:ring-white/30"
+                  />
+                  <button onClick={handleUrlConfirm} className="px-4 py-2 bg-white/10 rounded-lg text-white/80 text-sm hover:bg-white/20">确认</button>
+                </div>
+              </div>
+            )}
+            <button onClick={() => setUseUrl(!useUrl)} className="text-xs text-white/30 hover:text-white/60 mb-4">
+              {useUrl ? "← 拖拽上传" : "通过 URL 添加 →"}
+            </button>
+          </>
+        ) : (
+          <div className="mb-4">
+            <div className="aspect-video rounded-xl overflow-hidden bg-black/50 relative group">
+              <img src={imageUrl} alt="preview" className="w-full h-full object-cover" />
+              <button
+                onClick={() => setImageUrl("")}
+                className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 text-white/80 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                &times;
+              </button>
+            </div>
           </div>
         )}
 
@@ -189,7 +248,7 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
 
         <button
           onClick={handleAdd}
-          disabled={adding || !url.trim() || !title.trim()}
+          disabled={adding || !imageUrl || !title.trim()}
           className="w-full py-3 bg-white text-black rounded-full text-sm font-medium hover:bg-white/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
         >
           {adding ? "添加中..." : "添加照片"}

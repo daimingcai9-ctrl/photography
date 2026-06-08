@@ -20,7 +20,7 @@ export default function PhotoModal({ photo, onClose, onChange }: PhotoModalProps
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fadeIn"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-fadeIn"
       onClick={onClose}
     >
       {/* Backdrop */}
