@@ -27,7 +27,16 @@ export interface Photo {
 function getCustomPhotos(): Photo[] {
   if (typeof window === "undefined") return [];
   try {
-    return JSON.parse(localStorage.getItem("custom-photos") || "[]");
+    const parsed: unknown = JSON.parse(localStorage.getItem("custom-photos") || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is Photo => {
+      if (!item || typeof item !== "object") return false;
+      const candidate = item as Partial<Photo>;
+      return typeof candidate.id === "string" &&
+        typeof candidate.url === "string" &&
+        typeof candidate.thumbnail === "string" &&
+        typeof candidate.title === "string";
+    });
   } catch {
     return [];
   }

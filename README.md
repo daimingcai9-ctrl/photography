@@ -1,36 +1,66 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 光影视界
 
-## Getting Started
+个人摄影作品展示站，使用 Next.js App Router 构建并静态导出。网站包含色彩画廊、拍摄地点地图、照片详情和摄影数据分析。
 
-First, run the development server:
+## 本地运行
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+打开 <http://localhost:3000>。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+默认开发命令使用 Webpack，避免这台机器上曾出现的 Turbopack 多 worker 内存持续增长。只有明确需要排查 Turbopack 时才运行 `pnpm dev:turbo`，并在使用后及时停止。
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+常用检查：
 
-## Learn More
+```bash
+pnpm lint
+pnpm build
+```
 
-To learn more about Next.js, take a look at the following resources:
+## 照片数据
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `public/photos/`：公开原图
+- `public/thumbnails/`：400px 缩略图
+- `data/photos.json`：网站使用的照片元数据
+- `source-photos/`：本地源文件备份，不提交、不部署
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+批量重新生成缩略图、色板和 EXIF 元数据：
 
-## Deploy on Vercel
+```bash
+pnpm extract-colors
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 本地管理模式
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+公开网站默认不显示添加和编辑按钮，因为浏览器本地修改不会自动发布。需要本地整理照片时：
+
+1. 复制 `.env.example` 为 `.env.local`。
+2. 设置 `NEXT_PUBLIC_ENABLE_LOCAL_STUDIO=true`。
+3. 分别运行 `pnpm dev` 和 `pnpm upload-server`。
+4. 在图库中添加照片；本地服务会写入原图、缩略图和 `photos.json`。
+5. 检查改动，构建通过后提交 Git，由 Cloudflare Pages 发布。
+
+本地上传服务只绑定 `127.0.0.1`，限制允许来源和请求体大小，不能直接作为公网手机上传接口使用。
+
+## 未来手机上传
+
+上传界面通过 `NEXT_PUBLIC_PHOTO_UPLOAD_ENDPOINT` 与上传服务解耦。以后增加手机上传时，建议保持现有前端，新增一个带登录验证的 HTTPS 接口，并使用：
+
+- Cloudflare Access 或一次性登录链接进行身份验证
+- R2 保存原图和派生图片
+- D1 保存照片元数据和发布状态
+- 服务端校验文件类型、大小和 EXIF 隐私信息
+- `draft → published` 发布流程，避免上传后直接公开
+
+部署远程接口后，还需要把接口域名加入 `public/_headers` 的 CSP `connect-src`。
+
+## 环境变量
+
+| 变量 | 用途 |
+| --- | --- |
+| `NEXT_PUBLIC_ENABLE_LOCAL_STUDIO` | 显示本地添加和编辑入口 |
+| `NEXT_PUBLIC_PHOTO_UPLOAD_ENDPOINT` | 本地或未来远程上传接口 |
+| `NEXT_PUBLIC_SITE_URL` | 生成照片分享卡片的绝对地址 |

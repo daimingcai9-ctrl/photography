@@ -22,7 +22,7 @@ import {
   getLocationStats,
   getCameraStats,
 } from "@/lib/analytics";
-import { useEditedPhotos } from "@/lib/store";
+import { Photo } from "@/lib/photos";
 import { COLOR_CATEGORY_COLORS, ColorCategory } from "@/lib/colors";
 
 const COLORS = [
@@ -40,8 +40,11 @@ const COLORS = [
   "#F7FAFC",
 ];
 
-export function MonthlyChart() {
-  const [photos] = useEditedPhotos();
+interface ChartProps {
+  photos: Photo[];
+}
+
+export function MonthlyChart({ photos }: ChartProps) {
   const data = getPhotosByMonth(photos);
 
   return (
@@ -74,8 +77,7 @@ export function MonthlyChart() {
   );
 }
 
-export function SeasonChart() {
-  const [photos] = useEditedPhotos();
+export function SeasonChart({ photos }: ChartProps) {
   const data = getPhotosBySeason(photos);
 
   return (
@@ -105,8 +107,7 @@ export function SeasonChart() {
   );
 }
 
-export function ColorChart() {
-  const [photos] = useEditedPhotos();
+export function ColorChart({ photos }: ChartProps) {
   const data = getColorDistribution(photos);
 
   return (
@@ -119,7 +120,7 @@ export function ColorChart() {
             cx="50%"
             cy="50%"
             labelLine={false}
-            label={({ name, percent }: any) => `${name || ''} ${((percent || 0) * 100).toFixed(0)}%`}
+            label={({ name, percent }) => `${String(name || "")} ${(Number(percent || 0) * 100).toFixed(0)}%`}
             outerRadius={100}
             fill="#8884d8"
             dataKey="count"
@@ -145,8 +146,7 @@ export function ColorChart() {
   );
 }
 
-export function LocationChart() {
-  const [photos] = useEditedPhotos();
+export function LocationChart({ photos }: ChartProps) {
   const data = getLocationStats(photos);
 
   return (
@@ -176,8 +176,7 @@ export function LocationChart() {
   );
 }
 
-export function CameraChart() {
-  const [photos] = useEditedPhotos();
+export function CameraChart({ photos }: ChartProps) {
   const data = getCameraStats(photos);
 
   return (

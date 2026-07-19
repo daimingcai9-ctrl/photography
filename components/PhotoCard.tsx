@@ -13,10 +13,12 @@ export default function PhotoCard({ photo, index, onClick }: PhotoCardProps) {
   const categoryColor = COLOR_CATEGORY_COLORS[photo.colorCategory as ColorCategory];
 
   return (
-    <div
-      className="group cursor-pointer animate-fadeIn"
+    <button
+      type="button"
+      className="group block w-full cursor-pointer animate-fadeIn rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-4 focus-visible:ring-offset-black"
       style={{ animationDelay: `${index * 0.05}s` }}
       onClick={onClick}
+      aria-label={`查看照片：${photo.title}，拍摄于${photo.location.name}`}
     >
       <div className="relative overflow-hidden rounded-xl bg-white/5 backdrop-blur-sm hover:transform hover:scale-105 transition-all duration-300">
         {/* Image */}
@@ -63,6 +65,6 @@ export default function PhotoCard({ photo, index, onClick }: PhotoCardProps) {
           </div>
         </div>
       </div>
-    </div>
+    </button>
   );
 }

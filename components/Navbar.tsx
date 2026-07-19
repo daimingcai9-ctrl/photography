@@ -22,14 +22,14 @@ export default function Navbar() {
             光影视界
           </Link>
 
-          <div className="flex space-x-8">
+          <div className="flex gap-3 sm:gap-8">
             {navItems.map((item) => {
               const isActive = pathname === item.href;
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`relative text-sm font-medium transition-colors ${
+                  className={`relative text-xs font-medium transition-colors sm:text-sm ${
                     isActive ? "text-white" : "text-white/60 hover:text-white"
                   }`}
                 >

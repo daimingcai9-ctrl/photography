@@ -13,6 +13,7 @@ import * as path from "path";
 import * as crypto from "crypto";
 import sharp from "sharp";
 import exifr from "exifr";
+import type { Photo } from "../lib/photos";
 
 const PORT = 3001;
 const PHOTOS_DIR = path.join(__dirname, "..", "public", "photos");
@@ -26,7 +27,7 @@ function rgbToHex({ r, g, b }: { r: number; g: number; b: number }): string {
   return "#" + [r, g, b].map((x) => Math.round(x).toString(16).padStart(2, "0")).join("");
 }
 
-function categorizeColor(hex: string): string {
+function categorizeColor(hex: string): Photo["colorCategory"] {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
   const b = parseInt(hex.slice(5, 7), 16) / 255;
@@ -72,17 +73,37 @@ function extractPalette(buffer: Buffer): string[] {
 // ============================================================
 // Process uploaded photo
 // ============================================================
+interface ExifData {
+  DateTimeOriginal?: string | Date;
+  Make?: string;
+  Model?: string;
+  LensModel?: string;
+  ISO?: number;
+  FNumber?: number;
+  ExposureTime?: number;
+}
+
+interface UploadBody {
+  dataUrl?: string;
+  title?: string;
+  date?: string;
+  city?: { name: string; lat: number; lng: number };
+  camera?: string;
+}
+
 async function processUpload(dataUrl: string, meta: {
   title?: string;
   date?: string;
   city?: { name: string; lat: number; lng: number };
   camera?: string;
-}): Promise<any> {
+}): Promise<Photo> {
   // Decode data URL
-  const matches = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+  const matches = dataUrl.match(/^data:image\/(jpeg|png|webp);base64,(.+)$/);
   if (!matches) throw new Error("Invalid data URL");
   const ext = matches[1] === "jpeg" ? "jpg" : matches[1];
   const buffer = Buffer.from(matches[2], "base64");
+  if (buffer.byteLength > 25 * 1024 * 1024) throw new Error("Image exceeds 25MB limit");
+  await sharp(buffer).metadata();
 
   // Generate unique filename
   const id = crypto.randomUUID().slice(0, 8).toUpperCase();
@@ -111,12 +132,12 @@ async function processUpload(dataUrl: string, meta: {
   const palette = extractPalette(paletteBuf);
 
   // Extract EXIF
-  let exif: any = {};
+  let exif: ExifData = {};
   try {
     exif = await exifr.parse(filePath, {
       pick: ["DateTimeOriginal", "Make", "Model", "LensModel", "ISO", "FNumber", "ExposureTime",
              "GPSLatitude", "GPSLongitude", "GPSLatitudeRef", "GPSLongitudeRef"],
-    });
+    }) as ExifData;
   } catch {}
 
   const cameraStr = meta.camera || (exif?.Model ? `${exif.Make || ""} ${exif.Model}`.trim() : "未知");
@@ -157,23 +178,35 @@ async function processUpload(dataUrl: string, meta: {
 // HTTP Server
 // ============================================================
 const server = http.createServer((req, res) => {
-  // CORS headers
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  const allowedOrigins = new Set(["http://localhost:3000", "http://127.0.0.1:3000"]);
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.has(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (req.method === "OPTIONS") {
-    res.writeHead(204);
+    res.writeHead(!origin || allowedOrigins.has(origin) ? 204 : 403);
     res.end();
     return;
   }
 
   if (req.method === "POST" && req.url === "/api/upload") {
     let body = "";
-    req.on("data", (chunk) => body += chunk);
+    let tooLarge = false;
+    req.on("data", (chunk: Buffer) => {
+      if (tooLarge) return;
+      body += chunk.toString("utf8");
+      if (body.length > 36 * 1024 * 1024) {
+        tooLarge = true;
+        res.writeHead(413, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Request too large" }));
+      }
+    });
     req.on("end", async () => {
+      if (tooLarge) return;
       try {
-        const { dataUrl, title, date, city, camera } = JSON.parse(body);
+        const { dataUrl, title, date, city, camera } = JSON.parse(body) as UploadBody;
         if (!dataUrl) {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Missing dataUrl" }));
@@ -184,17 +217,18 @@ const server = http.createServer((req, res) => {
         const photo = await processUpload(dataUrl, { title, date, city, camera });
 
         // Read existing photos.json and append
-        const existing = JSON.parse(fs.readFileSync(OUTPUT_FILE, "utf-8"));
+        const existing = JSON.parse(fs.readFileSync(OUTPUT_FILE, "utf-8")) as { photos: Photo[] };
         existing.photos.push(photo);
         fs.writeFileSync(OUTPUT_FILE, JSON.stringify(existing, null, 2));
         console.log(`  ✓ Added to photos.json (${existing.photos.length} total)`);
 
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ success: true, photo }));
-      } catch (err: any) {
-        console.error(`  ✗ Error: ${err.message}`);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        console.error(`  ✗ Error: ${message}`);
         res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: err.message }));
+        res.end(JSON.stringify({ error: message }));
       }
     });
     return;
@@ -204,7 +238,7 @@ const server = http.createServer((req, res) => {
   res.end("Not found");
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, "127.0.0.1", () => {
   console.log(`\n🚀 Photo upload server running on http://localhost:${PORT}`);
   console.log(`   POST /api/upload with { dataUrl, title, date, city, camera }`);
   console.log(`\n   Waiting for uploads...\n`);

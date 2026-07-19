@@ -2,6 +2,7 @@
 
 import Hero from "@/components/Hero";
 import { useEditedPhotos } from "@/lib/store";
+import Link from "next/link";
 
 export default function Home() {
   const [allPhotos] = useEditedPhotos();
@@ -9,7 +10,7 @@ export default function Home() {
   return (
     <div className="h-screen overflow-y-scroll snap-y snap-mandatory">
       <section className="h-screen snap-start">
-        <Hero />
+        <Hero photos={allPhotos} />
       </section>
 
       <section className="h-screen snap-start relative overflow-hidden flex items-center justify-center">
@@ -32,8 +33,9 @@ export default function Home() {
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl w-full">
               {allPhotos.slice(0, 4).map((photo) => (
-                <div
+                <Link
                   key={photo.id}
+                  href={`/photo/${photo.id}`}
                   className="relative aspect-square rounded-xl overflow-hidden group cursor-pointer"
                 >
                   <img
@@ -48,16 +50,16 @@ export default function Home() {
                       <p className="text-white/60 text-sm">{photo.location.name}</p>
                     </div>
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
 
-            <a
+            <Link
               href="/gallery"
               className="mt-10 inline-block px-8 py-3 bg-white text-black rounded-full font-medium hover:bg-white/90 transition-colors"
             >
               查看全部作品
-            </a>
+            </Link>
           </div>
         </div>
       </section>

@@ -10,6 +10,7 @@ import * as fs from "fs";
 import * as path from "path";
 import sharp from "sharp";
 import exifr from "exifr";
+import type { Photo } from "../lib/photos";
 
 const PHOTOS_DIR = path.join(__dirname, "..", "public", "photos");
 const THUMBS_DIR = path.join(__dirname, "..", "public", "thumbnails");
@@ -22,7 +23,7 @@ function rgbToHex({ r, g, b }: { r: number; g: number; b: number }): string {
   return "#" + [r, g, b].map((x) => Math.round(x).toString(16).padStart(2, "0")).join("");
 }
 
-function categorizeColor(hex: string): string {
+function categorizeColor(hex: string): Photo["colorCategory"] {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
   const b = parseInt(hex.slice(5, 7), 16) / 255;
@@ -65,7 +66,21 @@ function getPhotos(): string[] {
 // ============================================================
 // Main processing
 // ============================================================
-async function processPhoto(filename: string): Promise<any | null> {
+interface ExifData {
+  DateTimeOriginal?: string | Date;
+  Make?: string;
+  Model?: string;
+  LensModel?: string;
+  ISO?: number;
+  FNumber?: number;
+  ExposureTime?: number;
+  GPSLatitude?: number;
+  GPSLongitude?: number;
+  GPSLatitudeRef?: string;
+  GPSLongitudeRef?: string;
+}
+
+async function processPhoto(filename: string): Promise<Photo | null> {
   const filePath = path.join(PHOTOS_DIR, filename);
   const nameNoExt = path.parse(filename).name;
   const thumbPath = path.join(THUMBS_DIR, `${nameNoExt}.jpg`);
@@ -78,7 +93,6 @@ async function processPhoto(filename: string): Promise<any | null> {
       .toFile(thumbPath);
 
     // Extract dominant color from thumbnail
-    const { dominant } = await sharp(thumbPath).stats();
     const raw = await sharp(thumbPath).raw().ensureAlpha().resize(1, 1).toBuffer();
     const r = raw[0], g = raw[1], b = raw[2];
     const dominantColor = rgbToHex({ r, g, b });
@@ -94,11 +108,11 @@ async function processPhoto(filename: string): Promise<any | null> {
     const palette = extractPalette(paletteBuf);
 
     // Extract EXIF
-    let exif: any = {};
+    let exif: ExifData = {};
     try {
       exif = await exifr.parse(filePath, {
         pick: ["DateTimeOriginal", "Make", "Model", "LensModel", "ISO", "FNumber", "ExposureTime", "GPSLatitude", "GPSLongitude", "GPSLatitudeRef", "GPSLongitudeRef"],
-      });
+      }) as ExifData;
     } catch { /* no EXIF */ }
 
     const camera = exif?.Make && exif?.Model ? `${exif.Make} ${exif.Model}`.trim() : "未知";
@@ -169,7 +183,7 @@ async function main() {
   const files = getPhotos();
   console.log(`Found ${files.length} photos\n`);
 
-  const photos: any[] = [];
+  const photos: Photo[] = [];
   let success = 0;
 
   for (let i = 0; i < files.length; i++) {

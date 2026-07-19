@@ -175,7 +175,7 @@ export function categorizeColor(hex: string): ColorCategory {
  * Get all color categories with their metadata
  */
 export function getColorCategories() {
-  return Object.entries(COLOR_CATEGORIES).map(([key, _]) => ({
+  return Object.keys(COLOR_CATEGORIES).map((key) => ({
     id: key as ColorCategory,
     name: COLOR_CATEGORY_NAMES[key as ColorCategory],
     color: COLOR_CATEGORY_COLORS[key as ColorCategory],

@@ -1,14 +1,17 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { Photo } from "@/lib/photos";
+import { useState } from "react";
 import { useEditedPhotos } from "@/lib/store";
+import { LOCAL_STUDIO_ENABLED } from "@/lib/config";
 import MapView from "@/components/MapView";
 import PhotoModal from "@/components/PhotoModal";
 
 export default function MapPage() {
-  const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
+  const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const [allPhotos, reload] = useEditedPhotos();
+  const selectedPhoto = selectedPhotoId
+    ? allPhotos.find((photo) => photo.id === selectedPhotoId) || null
+    : null;
 
   return (
     <div className="h-screen pt-16 flex flex-col">
@@ -17,9 +20,15 @@ export default function MapPage() {
         <p className="text-white/60 text-sm">点击标记查看照片 · 共 {allPhotos.length} 张</p>
       </div>
       <div className="flex-1 relative">
-        <MapView photos={allPhotos} onPhotoClick={setSelectedPhoto} />
+        <MapView photos={allPhotos} onPhotoClick={(photo) => setSelectedPhotoId(photo.id)} />
       </div>
-      <PhotoModal photo={selectedPhoto} onClose={() => setSelectedPhoto(null)} onChange={reload} />
+      <PhotoModal
+        key={selectedPhoto?.id}
+        photo={selectedPhoto}
+        onClose={() => setSelectedPhotoId(null)}
+        onChange={reload}
+        allowEditing={LOCAL_STUDIO_ENABLED}
+      />
     </div>
   );
 }

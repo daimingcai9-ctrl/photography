@@ -46,12 +46,12 @@ export default function AnalyticsPage() {
 
         {/* Charts grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <MonthlyChart />
-          <SeasonChart />
-          <ColorChart />
-          <LocationChart />
+          <MonthlyChart photos={allPhotos} />
+          <SeasonChart photos={allPhotos} />
+          <ColorChart photos={allPhotos} />
+          <LocationChart photos={allPhotos} />
           <div className="lg:col-span-2">
-            <CameraChart />
+            <CameraChart photos={allPhotos} />
           </div>
         </div>
       </div>

@@ -14,7 +14,9 @@ export default function ColorBar({ selectedCategory, onSelect }: ColorBarProps) 
     <div className="flex flex-wrap gap-3 justify-center py-6">
       {/* All button */}
       <button
+        type="button"
         onClick={() => onSelect(null)}
+        aria-pressed={selectedCategory === null}
         className={`px-4 py-2 rounded-full text-sm font-medium transition-all hover:scale-105 ${
           selectedCategory === null
             ? "bg-white text-black shadow-lg"
@@ -29,8 +31,10 @@ export default function ColorBar({ selectedCategory, onSelect }: ColorBarProps) 
         const isSelected = selectedCategory === category.id;
         return (
           <button
+            type="button"
             key={category.id}
             onClick={() => onSelect(isSelected ? null : category.id)}
+            aria-pressed={isSelected}
             className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all hover:scale-105"
             style={{
               backgroundColor: isSelected

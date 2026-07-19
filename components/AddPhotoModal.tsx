@@ -3,7 +3,8 @@
 import { useState, useRef } from "react";
 import { Photo } from "@/lib/photos";
 import { categorizeColor } from "@/lib/colors";
-import { savePhotoEdit } from "@/lib/store";
+import { saveCustomPhoto, savePhotoEdit } from "@/lib/store";
+import { PHOTO_UPLOAD_ENDPOINT } from "@/lib/config";
 
 // China city options
 const CITY_OPTIONS = [
@@ -48,6 +49,10 @@ const CAMERA_OPTIONS = [
 interface AddPhotoModalProps {
   onClose: () => void;
   onAdd: (photo: Photo) => void;
+}
+
+interface UploadResponse {
+  photo: Photo;
 }
 
 export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
@@ -134,6 +139,10 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
 
   const handleFile = async (file: File) => {
     if (!file.type.startsWith("image/")) return;
+    if (file.size > 25 * 1024 * 1024) {
+      setError("照片不能超过 25MB");
+      return;
+    }
     setError("");
     originalFileRef.current = file;
     try {
@@ -176,7 +185,7 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
     setUploadStatus("uploading");
     try {
       const originalDataUrl = await readAsDataUrl(file);
-      const resp = await fetch("http://localhost:3001/api/upload", {
+      const resp = await fetch(PHOTO_UPLOAD_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -189,28 +198,18 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
       });
 
       if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: "Unknown error" }));
-        throw new Error(err.error);
+        const errorBody = await resp.json().catch(() => ({ error: "上传失败" })) as { error?: string };
+        throw new Error(errorBody.error || "上传失败");
       }
 
-      const result = await resp.json();
+      const result = await resp.json() as UploadResponse;
       setUploadStatus("done");
-      return result.photo as Photo;
-    } catch (err: any) {
-      console.warn("Upload server unavailable, falling back to localStorage:", err.message);
+      return result.photo;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "未知错误";
+      console.warn("Upload server unavailable, falling back to local draft:", message);
       setUploadStatus("fallback");
       return null;
-    }
-  };
-
-  /** Fallback: save compressed image to localStorage */
-  const saveToLocalStorage = (photo: Photo) => {
-    try {
-      const existing = JSON.parse(localStorage.getItem("custom-photos") || "[]");
-      existing.push(photo);
-      localStorage.setItem("custom-photos", JSON.stringify(existing));
-    } catch {
-      throw new Error("localStorage 保存失败，存储空间可能已满");
     }
   };
 
@@ -253,10 +252,10 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
 
     try {
       savePhotoEdit(id, { location: city, title, tags: [categorizeColor(color)] });
-      saveToLocalStorage(fallbackPhoto);
-    } catch (e: any) {
+      saveCustomPhoto(fallbackPhoto);
+    } catch (error: unknown) {
       setAdding(false);
-      setError(e.message);
+      setError(error instanceof Error ? error.message : "本地草稿保存失败");
       return;
     }
 
@@ -268,12 +267,15 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
     <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/80" />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-photo-title"
         className="relative w-full max-w-md bg-zinc-900 rounded-2xl p-6 max-h-[85vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-white">添加照片</h2>
-          <button onClick={onClose} className="text-white/40 hover:text-white text-2xl leading-none">&times;</button>
+          <h2 id="add-photo-title" className="text-xl font-bold text-white">添加照片</h2>
+          <button type="button" onClick={onClose} aria-label="关闭添加照片面板" className="text-white/40 hover:text-white text-2xl leading-none">&times;</button>
         </div>
 
         {/* Drop zone or preview */}
@@ -403,7 +405,7 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
           <p className="text-white/40 text-xs mb-3 text-center">正在上传原图并生成缩略图...</p>
         )}
         {uploadStatus === "fallback" && (
-          <p className="text-yellow-400/70 text-xs mb-3 text-center">上传服务未运行，已保存压缩版到浏览器缓存。启动上传服务后可保存原图到 git。</p>
+          <p className="text-yellow-400/70 text-xs mb-3 text-center">上传接口不可用，已仅作为此设备的本地草稿保存，不会出现在其他设备或公开网站。</p>
         )}
 
         <button
@@ -415,7 +417,7 @@ export default function AddPhotoModal({ onClose, onAdd }: AddPhotoModalProps) {
         </button>
 
         <p className="text-white/20 text-[10px] text-center mt-3">
-          上传服务运行时：原图保存到 public/photos/ + 自动生成缩略图 + 写入 photos.json
+          当前为本地管理模式；未来可通过环境变量接入经过身份验证的手机上传接口
         </p>
       </div>
     </div>

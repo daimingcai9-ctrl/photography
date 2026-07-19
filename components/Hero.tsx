@@ -1,16 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { getAllPhotos, Photo } from "@/lib/photos";
+import { Photo } from "@/lib/photos";
 import { COLOR_CATEGORY_COLORS, ColorCategory } from "@/lib/colors";
 
-export default function Hero() {
-  const [photos, setPhotos] = useState<Photo[]>([]);
-
-  useEffect(() => {
-    setPhotos(getAllPhotos());
-  }, []);
-
+export default function Hero({ photos }: { photos: Photo[] }) {
   const uniqueColors = [...new Set(photos.map((p) => p.colorCategory))];
   const colors = uniqueColors.map((cat) => COLOR_CATEGORY_COLORS[cat as ColorCategory]);
 

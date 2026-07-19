@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Photo } from "@/lib/photos";
-import { savePhotoEdit } from "@/lib/store";
+import { deleteCustomPhoto, resetPhotoEdit, savePhotoEdit } from "@/lib/store";
 
 // Common camera models
 const CAMERA_OPTIONS = [
@@ -84,27 +84,14 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
   const isCustomPhoto = photo.id.startsWith("new-") || photo.id.startsWith("upload-");
 
   const handleReset = () => {
-    try {
-      const edits = JSON.parse(localStorage.getItem("photo-edits") || "{}");
-      delete edits[photo.id];
-      localStorage.setItem("photo-edits", JSON.stringify(edits));
-    } catch {}
+    resetPhotoEdit(photo.id);
     onChange();
     onClose();
   };
 
   const handleDelete = () => {
     if (!confirm("确定要删除这张照片吗？")) return;
-    try {
-      // Remove from custom-photos
-      const customs = JSON.parse(localStorage.getItem("custom-photos") || "[]");
-      const filtered = customs.filter((p: any) => p.id !== photo.id);
-      localStorage.setItem("custom-photos", JSON.stringify(filtered));
-      // Remove any edits
-      const edits = JSON.parse(localStorage.getItem("photo-edits") || "{}");
-      delete edits[photo.id];
-      localStorage.setItem("photo-edits", JSON.stringify(edits));
-    } catch {}
+    deleteCustomPhoto(photo.id);
     onChange();
     onClose();
   };
@@ -114,12 +101,15 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
       <div className="absolute inset-0 bg-black/80" />
 
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-photo-title"
         className="relative w-full max-w-md bg-zinc-900 rounded-2xl p-6 max-h-[85vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-white">编辑照片信息</h2>
-          <button onClick={onClose} className="text-white/40 hover:text-white text-2xl leading-none">&times;</button>
+          <h2 id="edit-photo-title" className="text-xl font-bold text-white">编辑照片信息</h2>
+          <button type="button" onClick={onClose} aria-label="关闭编辑面板" className="text-white/40 hover:text-white text-2xl leading-none">&times;</button>
         </div>
 
         {/* Preview */}
@@ -151,6 +141,7 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
           <div className="flex flex-wrap gap-1.5">
             {CAMERA_OPTIONS.map((c) => (
               <button
+                type="button"
                 key={c.value}
                 onClick={() => setCamera(c.value)}
                 className={`px-2.5 py-1 rounded-full text-xs transition-colors ${
@@ -169,6 +160,7 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
           <div className="flex flex-wrap gap-1.5">
             {CITY_SUGGESTIONS.map((city) => (
               <button
+                type="button"
                 key={city.name}
                 onClick={() => handleSelectCity(city)}
                 className={`px-3 py-1.5 rounded-full text-xs transition-colors ${
@@ -222,12 +214,14 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
         {/* Action buttons */}
         <div className="flex gap-3">
           <button
+            type="button"
             onClick={handleSave}
             className="flex-1 py-2.5 bg-white text-black rounded-full text-sm font-medium hover:bg-white/90 transition-colors"
           >
             保存
           </button>
           <button
+            type="button"
             onClick={handleReset}
             className="px-4 py-2.5 bg-white/10 text-white/60 rounded-full text-sm hover:bg-white/20 transition-colors"
           >
@@ -235,6 +229,7 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
           </button>
           {isCustomPhoto && (
             <button
+              type="button"
               onClick={handleDelete}
               className="px-4 py-2.5 bg-red-500/20 text-red-400 rounded-full text-sm hover:bg-red-500/30 transition-colors"
             >
