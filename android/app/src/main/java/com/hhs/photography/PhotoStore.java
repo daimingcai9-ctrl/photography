@@ -32,6 +32,7 @@ public final class PhotoStore extends SQLiteOpenHelper {
     private final File root;
     private final ContentResolver resolver;
     private final Context context;
+    private final CityIndex cities;
     public static final class Record {
         public final String id, name, mime, sourceUri;
         public final JSONObject photo;
@@ -56,6 +57,7 @@ public final class PhotoStore extends SQLiteOpenHelper {
         super(context, "offline-" + library + ".db", null, 2);
         resolver = context.getContentResolver();
         this.context = context.getApplicationContext();
+        cities = new CityIndex(this.context);
         root = new File(context.getNoBackupFilesDir(), "album-" + library);
         if (!root.isDirectory() && !root.mkdirs()) throw new IOException("无法创建手机相册存储");
         getWritableDatabase();
@@ -79,13 +81,14 @@ public final class PhotoStore extends SQLiteOpenHelper {
     public List<Record> list(boolean deleted) throws Exception {
         ArrayList<Record> rows = new ArrayList<>();
         try (Cursor c = getReadableDatabase().rawQuery("SELECT id,metadata,original_name,mime,deleted,source_uri FROM photos WHERE deleted=? ORDER BY date DESC, rowid DESC", new String[]{deleted ? "1" : "0"})) {
-            while (c.moveToNext()) rows.add(new Record(c));
+            while (c.moveToNext()) { Record row=new Record(c); resolveAutomaticName(row.photo); rows.add(row); }
         }
         return rows;
     }
     public Record find(String id) throws Exception {
         try (Cursor c = getReadableDatabase().rawQuery("SELECT id,metadata,original_name,mime,deleted,source_uri FROM photos WHERE id=?", new String[]{safeId(id)})) {
-            return c.moveToFirst() ? new Record(c) : null;
+            if(!c.moveToFirst()) return null;
+            Record row=new Record(c); resolveAutomaticName(row.photo); return row;
         }
     }
     public long bytes() { long n = 0; File[] files = root.listFiles(); if (files != null) for (File f : files) n += f.length(); return n; }
@@ -134,7 +137,11 @@ public final class PhotoStore extends SQLiteOpenHelper {
         ExifInterface exif = readExif(source);
         return decode(source, maximum, exif == null ? 1 : exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, 1));
     }
-    private ExifInterface locationExif(Uri uri) {
+    private static final class LocationRead {
+        final JSONObject location; final String status;
+        LocationRead(JSONObject location,String status) { this.location=location; this.status=status; }
+    }
+    private LocationRead locationRead(Uri uri) throws Exception {
         // Read GPS separately: never swap/hash a different URI or mutate the original reference.
         if (Build.VERSION.SDK_INT >= 29 && context.checkSelfPermission(android.Manifest.permission.ACCESS_MEDIA_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
             try {
@@ -142,25 +149,47 @@ public final class PhotoStore extends SQLiteOpenHelper {
                 // Photo picker URIs don't support requireOriginal on older systems.
                 if (media != null && media.getPath() != null && !media.getPath().contains("/picker")) {
                     try (InputStream input = resolver.openInputStream(MediaStore.setRequireOriginal(media))) {
-                        if (input != null) return new ExifInterface(input);
+                        if (input != null) {
+                            JSONObject location=gpsLocation(new ExifInterface(input));
+                            // A readable metadata stream is NOT proof that it contains GPS.
+                            if (location!=null) return new LocationRead(location,"available");
+                        }
                     }
                 }
             } catch (IOException | SecurityException | IllegalArgumentException | UnsupportedOperationException ignored) { /* Provider may only expose selected/redacted data. */ }
         }
-        return readExif(() -> openUri(uri));
+        try (InputStream input=openUri(uri)) {
+            JSONObject location;
+            try { location=gpsLocation(new ExifInterface(input)); } catch(IOException | IllegalArgumentException malformed) { location=null; }
+            if(location!=null) return new LocationRead(location,"available");
+        } catch(IOException | SecurityException unavailable) { return new LocationRead(null,"source-unavailable"); }
+        boolean permission=Build.VERSION.SDK_INT<29 || context.checkSelfPermission(android.Manifest.permission.ACCESS_MEDIA_LOCATION)==android.content.pm.PackageManager.PERMISSION_GRANTED;
+        return new LocationRead(null,!permission ? "permission-required" : uri.getPath()!=null&&uri.getPath().contains("/picker") ? "picker-redacted" : "not-provided");
     }
     private static JSONObject gpsLocation(ExifInterface exif) throws Exception {
         float[] gps = new float[2];
-        if (exif == null || !exif.getLatLong(gps) || !Float.isFinite(gps[0]) || !Float.isFinite(gps[1]) || Math.abs(gps[0]) > 90 || Math.abs(gps[1]) > 180) return null;
+        try {
+            if (exif == null || !exif.getLatLong(gps) || !Float.isFinite(gps[0]) || !Float.isFinite(gps[1]) || Math.abs(gps[0]) > 90 || Math.abs(gps[1]) > 180 || (gps[0]==0 && gps[1]==0)) return null;
+        } catch(IllegalArgumentException malformed) { return null; }
         double lat = Math.round(gps[0] * 100.0) / 100.0, lng = Math.round(gps[1] * 100.0) / 100.0;
         return new JSONObject().put("lat",lat).put("lng",lng).put("name","拍摄地点 (" + lat + ", " + lng + ")");
     }
     public boolean refreshLocation(String id) throws Exception {
         Record row = find(id); if (row == null || row.deleted) throw new IOException("照片不存在");
-        JSONObject loc = gpsLocation(row.referenced() ? locationExif(Uri.parse(row.sourceUri)) : readExif(() -> openOriginal(row)));
-        if (loc == null) return false; // Missing or redacted EXIF must not erase manually edited locations.
-        row.photo.put("location",loc); ContentValues values = new ContentValues(); values.put("metadata",row.photo.toString());
-        getWritableDatabase().update("photos",values,"id=?",new String[]{id}); return true;
+        LocationRead result=row.referenced() ? locationRead(Uri.parse(row.sourceUri)) : new LocationRead(gpsLocation(readExif(() -> openOriginal(row))),sourceAvailable(row)?"not-provided":"source-unavailable");
+        row.photo.put("gpsStatus",result.location!=null ? "available" : result.status);
+        if(result.location!=null) { resolveCity(result.location); row.photo.put("location",result.location).put("locationOrigin","exif"); }
+        // Persist the diagnostic, but never erase a manual location when GPS is missing/redacted.
+        ContentValues values = new ContentValues(); values.put("metadata",row.photo.toString());
+        getWritableDatabase().update("photos",values,"id=?",new String[]{id}); return result.location!=null;
+    }
+    private void resolveCity(JSONObject location) throws Exception {
+        String city=cities.name(location.getDouble("lat"),location.getDouble("lng"));
+        if(city!=null) location.put("name",city);
+    }
+    private void resolveAutomaticName(JSONObject photo) throws Exception {
+        JSONObject location=photo.getJSONObject("location"); String name=location.optString("name");
+        if(!"manual".equals(photo.optString("locationOrigin")) && (name.isEmpty()||name.equals("未知")||name.startsWith("拍摄地点 ("))) resolveCity(location);
     }
     private ImportResult importPhoto(InputStream input, String name, String mime, long modified, String expected, JSONObject backup, Uri uri) throws Exception {
         File raw = new File(root, UUID.randomUUID() + ".part");
@@ -200,11 +229,22 @@ public final class PhotoStore extends SQLiteOpenHelper {
             int orientation = exif == null ? 1 : exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, 1);
             bitmap = decode(source, 2560, orientation);
             JSONObject photo = metadata(id, name, modified, exif, bitmap.getWidth(), bitmap.getHeight());
-            if (uri != null) { JSONObject gps = gpsLocation(locationExif(uri)); if (gps != null) photo.put("location",gps); }
+            if (uri != null) {
+                LocationRead result=locationRead(uri); photo.put("gpsStatus",result.status);
+                if(result.location!=null) photo.put("location",result.location);
+            }
+            JSONObject location=photo.getJSONObject("location");
+            if(location.optDouble("lat")!=0 || location.optDouble("lng")!=0) {
+                resolveCity(location); photo.put("gpsStatus","available").put("locationOrigin","exif");
+            } else if(!photo.has("gpsStatus")) photo.put("gpsStatus","not-provided");
             small = scale(bitmap, 400);
             JSONArray palette = palette(small); photo.put("palette", palette); photo.put("dominantColor", palette.getString(0));
             photo.put("colorCategory", category(Color.parseColor(palette.getString(0))));
-            if (backup != null) applyEdit(photo, backup.getJSONObject("photo"));
+            if (backup != null) {
+                JSONObject saved=backup.getJSONObject("photo"); applyEdit(photo,saved);
+                photo.put("locationOrigin",saved.optString("locationOrigin","manual"));
+                if(saved.has("gpsStatus")) photo.put("gpsStatus",saved.getString("gpsStatus"));
+            }
             saveJpeg(bitmap, display, 88); saveJpeg(small, thumbnail, 80);
             // Only complete, validated images receive a DB record. Startup cleans partial files.
             if (uri == null) { if (original(id).exists()) raw.delete(); else move(raw, original(id)); }
@@ -322,7 +362,11 @@ public final class PhotoStore extends SQLiteOpenHelper {
     }
     public void edit(String id, JSONObject edit) throws Exception {
         Record record = find(id); if (record == null) throw new IOException("照片不存在");
-        applyEdit(record.photo, edit); ContentValues values = new ContentValues(); values.put("metadata", record.photo.toString()); values.put("date", record.photo.getString("date"));
+        JSONObject before=record.photo.getJSONObject("location");
+        applyEdit(record.photo, edit);
+        JSONObject after=record.photo.getJSONObject("location");
+        if(!before.optString("name").equals(after.optString("name")) || before.optDouble("lat")!=after.optDouble("lat") || before.optDouble("lng")!=after.optDouble("lng")) record.photo.put("locationOrigin","manual");
+        ContentValues values = new ContentValues(); values.put("metadata", record.photo.toString()); values.put("date", record.photo.getString("date"));
         getWritableDatabase().update("photos", values, "id=?", new String[]{id});
     }
     public void trash(String id) { ContentValues v = new ContentValues(); v.put("deleted", 1); getWritableDatabase().update("photos", v, "id=?", new String[]{safeId(id)}); }

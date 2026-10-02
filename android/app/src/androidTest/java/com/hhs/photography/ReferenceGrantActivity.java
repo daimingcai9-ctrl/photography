@@ -34,7 +34,12 @@ public final class ReferenceGrantActivity extends Activity {
                 try (OutputStream output = new FileOutputStream(file)) { bitmap.compress(Bitmap.CompressFormat.JPEG, 95, output); }
                 bitmap.recycle(); ExifInterface exif = new ExifInterface(file.getPath());
                 exif.setAttribute(ExifInterface.TAG_ORIENTATION, "6"); exif.setAttribute(ExifInterface.TAG_DATETIME_ORIGINAL, "2025:04:03 00:00:00");
-                exif.setAttribute(ExifInterface.TAG_MAKE, "Reference"); exif.saveAttributes();
+                exif.setAttribute(ExifInterface.TAG_MAKE, "Reference");
+                if("gps".equals(action)) {
+                    exif.setAttribute(ExifInterface.TAG_GPS_LATITUDE,"31/1,13/1,48/1");exif.setAttribute(ExifInterface.TAG_GPS_LATITUDE_REF,"N");
+                    exif.setAttribute(ExifInterface.TAG_GPS_LONGITUDE,"121/1,28/1,12/1");exif.setAttribute(ExifInterface.TAG_GPS_LONGITUDE_REF,"E");
+                }
+                exif.saveAttributes();
                 grantUriPermission("com.hhs.photography.offline", ReferenceFixtureProvider.URI,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
             }

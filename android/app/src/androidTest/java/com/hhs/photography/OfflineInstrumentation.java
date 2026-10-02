@@ -111,7 +111,10 @@ public final class OfflineInstrumentation extends Instrumentation {
         js(activity,"(()=>{const seq=Album.debug();document.getElementById('viewer-next').click();document.getElementById('viewer-prev').click();Album.closeViewer();document.querySelector('.photo-card').click();return true})()");
         waitJs(activity,"!!Album.debug().detail&&document.querySelector('.viewer-loading').hidden&&document.getElementById('viewer-image').dataset.photo===Album.debug().detail&&document.getElementById('viewer-image').naturalWidth>0");
         waitJs(activity,"!document.getElementById('viewer').hidden&&getComputedStyle(document.getElementById('viewer')).opacity==='1'&&!document.querySelector('.morph-image')");
-        js(activity,"(Album.back(),Album.navigate('map'))");waitJs(activity,"Album.debug().page==='map'&&document.getElementById('map-canvas').width>0");screenshot("map");
+        js(activity,"(Album.back(),Album.navigate('map'))");waitJs(activity,"Album.debug().page==='map'&&Album.debug().chinaReady&&document.getElementById('map-canvas').width>0&&Album.debug().mapPoints>0");
+        check("true".equals(js(activity,"Album.debug().mapLon===105&&Album.debug().mapLat===29")),"Map did not default to China");screenshot("map");
+        js(activity,"document.querySelector('.location-focus').click()");waitJs(activity,"Album.debug().mapScale===28&&Album.debug().mapPoints>0");
+        js(activity,"document.getElementById('map-reset').click()");waitJs(activity,"Album.debug().mapLon===105&&Album.debug().mapLat===29&&Album.debug().mapScale<10");
         js(activity,"Album.navigate('analytics')");waitJs(activity,"document.querySelectorAll('.stat-card').length===4");screenshot("analytics");
         js(activity,"Album.navigate('studio')");
         waitJs(activity,"document.getElementById('page-studio').getBoundingClientRect().width>=innerWidth-1&&document.querySelector('.studio-card').getBoundingClientRect().width>=innerWidth-50&&document.getElementById('nav-studio').classList.contains('selected')");screenshot("studio");
@@ -178,6 +181,12 @@ public final class OfflineInstrumentation extends Instrumentation {
             check(row.photo.getString("date").equals("2025-01-02"), "EXIF 日期不正确");
             check(row.photo.getString("camera").equals("Offline Test Camera"), "EXIF 设备未读取");
             check(Math.abs(row.photo.getJSONObject("location").getDouble("lat")-31.23)<.001 && Math.abs(row.photo.getJSONObject("location").getDouble("lng")-121.47)<.001,"EXIF GPS not parsed/rounded");
+            check(row.photo.getJSONObject("location").getString("name").equals("上海"),"GPS did not resolve to offline city");
+            check(row.photo.getString("locationOrigin").equals("exif"),"GPS provenance missing");
+            CityIndex cityIndex=new CityIndex(getTargetContext());
+            check("深圳".equals(cityIndex.name(22.54,114.06)),"Shenzhen city lookup failed");
+            check("重庆".equals(cityIndex.name(29.55,106.55)),"Municipality was labeled as a district");
+            check(cityIndex.name(0,0)==null&&cityIndex.name(48.86,2.35)==null&&cityIndex.name(Double.NaN,114)==null,"Invalid/foreign coordinates fabricated a Chinese city");
             check(store.refreshLocation(added.id),"Existing photo cannot re-read EXIF GPS");
             check(row.photo.getString("colorCategory").equals("red"), "色彩分类不正确");
             check(new ExifInterface(store.image(added.id).getPath()).getAttribute(ExifInterface.TAG_MAKE) == null, "展示图未移除 EXIF");
@@ -235,6 +244,7 @@ public final class OfflineInstrumentation extends Instrumentation {
             restored.restoreZip(new ByteArrayInputStream(referencedBackup.toByteArray()), (n,msg) -> {});
             check(!restored.find(linked.id).referenced() && restored.original(linked.id).isFile(), "完整备份缺少引用原片");
             fixture("revoke"); check(!store.sourceAvailable(store.find(linked.id)), "未检测授权撤销");
+            check(!store.refreshLocation(linked.id)&&store.find(linked.id).photo.getString("gpsStatus").equals("source-unavailable"),"Revoked original was mislabeled as missing GPS");
             boolean revokedRejected = false;
             try { store.importReference(ReferenceFixtureProvider.URI, "引用.jpg", "image/jpeg", 0); } catch (IOException expected) { revokedRejected = true; }
             check(revokedRejected, "允许临时/无授权引用");
@@ -253,6 +263,11 @@ public final class OfflineInstrumentation extends Instrumentation {
             getTargetContext().getContentResolver().takePersistableUriPermission(ReferenceFixtureProvider.URI, Intent.FLAG_GRANT_READ_URI_PERMISSION);
             try (InputStream source = getTargetContext().getContentResolver().openInputStream(ReferenceFixtureProvider.URI)) { check(source != null && source.read() != -1, "删除应用记录触碰了系统原片"); }
             getTargetContext().getContentResolver().releasePersistableUriPermission(ReferenceFixtureProvider.URI, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            fixture("gps");getTargetContext().getContentResolver().takePersistableUriPermission(ReferenceFixtureProvider.URI,Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            PhotoStore.ImportResult gpsReference=store.importReference(ReferenceFixtureProvider.URI,"引用带GPS.jpg","image/jpeg",0);
+            check(!store.original(gpsReference.id).exists()&&store.find(gpsReference.id).photo.getJSONObject("location").getString("name").equals("上海"),"Authorized original URI GPS/city fallback failed");
+            check(store.refreshLocation(gpsReference.id)&&store.find(gpsReference.id).photo.getString("gpsStatus").equals("available"),"Reference GPS cannot be refreshed");
+            store.trash(gpsReference.id);store.erase(gpsReference.id);
             store.trash(added.id); store.erase(added.id); check(store.find(added.id) == null && !store.original(added.id).exists() && file.exists(), "删除触碰系统源片或残留副本");
             String[] permissions=getTargetContext().getPackageManager().getPackageInfo(getTargetContext().getPackageName(),4096).requestedPermissions;
             stage("requested permissions " + Arrays.toString(permissions));

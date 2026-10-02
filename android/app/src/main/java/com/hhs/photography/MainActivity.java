@@ -172,7 +172,7 @@ public final class MainActivity extends Activity {
         if (busy && !action.equals("bootstrap") && !action.equals("list") && !action.equals("haptic") && !action.equals("uiReady")) throw new IOException("正在处理照片，请等待完成");
         JSONObject result=new JSONObject();
         switch (action) {
-            case "bootstrap": return snapshot().put("motion",ValueAnimator.areAnimatorsEnabled()).put("version","3.2 · 私人相册").put("uiUpdate",updates.status());
+            case "bootstrap": return snapshot().put("motion",ValueAnimator.areAnimatorsEnabled()).put("version","3.3 · 私人相册").put("uiUpdate",updates.status());
             case "uiReady": updates.ready(); ui(() -> { uiReady=true; uiHandler.removeCallbacks(startupGuard); }); return result;
             case "checkUi": ui(() -> {
                 if (busy) return;
@@ -309,7 +309,16 @@ public final class MainActivity extends Activity {
         if (busy) return; progress(true,"正在读取原片拍摄位置…",0,0);
         worker.execute(() -> {
             String outcome;
-            try { outcome=store.refreshLocation(id) ? "已更新拍摄坐标；未联网查询地址。" : "未获得 GPS，已有地点未改动。请从文件选择器选原片，并检查小米相机是否开启保存位置信息；旧选择器可能隐藏 GPS。"; }
+            try {
+                boolean updated=store.refreshLocation(id);
+                PhotoStore.Record row=store.find(id);
+                String status=row.photo.optString("gpsStatus");
+                outcome=updated ? "已更新拍摄坐标与离线城市识别；未上传照片或位置。"
+                    : "source-unavailable".equals(status) ? "原图失联或授权失效，请重新关联原片；已有地点未改动。"
+                    : "permission-required".equals(status) ? "尚未授权读取照片位置。可重新授权，或从文件选择器选择原片；已有地点未改动。"
+                    : "picker-redacted".equals(status) ? "相册选择器未提供 GPS。请从管理 → 文件选择器选择原片；已有地点未改动。"
+                    : "该文件未提供可读 GPS，可能未记录或转发时被移除。无法恢复缺失的坐标；已有地点未改动。";
+            }
             catch (Exception error) { outcome="读取位置失败：" + message(error) + "；已有地点未改动。"; }
             progress(false,outcome,0,0); changed();
         });
