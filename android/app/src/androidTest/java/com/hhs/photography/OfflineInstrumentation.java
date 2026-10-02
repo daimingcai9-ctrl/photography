@@ -22,7 +22,9 @@ public final class OfflineInstrumentation extends Instrumentation {
     private void stage(String message) { Bundle status = new Bundle(); status.putString("stream", "TEST_STAGE: " + message + "\n"); sendStatus(0, status); }
     private void fixture(String operation) throws Exception {
         stage("provider " + operation);
-        try (ParcelFileDescriptor command = getUiAutomation().executeShellCommand("am start -W -n com.hhs.photography.offline.test/com.hhs.photography.ReferenceGrantActivity --es operation " + operation);
+        // NEW_TASK | CLEAR_TASK: do not deliver a second operation to an old
+        // still-visible fixture activity while its delayed finish is pending.
+        try (ParcelFileDescriptor command = getUiAutomation().executeShellCommand("am start -W -f 0x10008000 -n com.hhs.photography.offline.test/com.hhs.photography.ReferenceGrantActivity --es operation " + operation);
              InputStream input = new ParcelFileDescriptor.AutoCloseInputStream(command)) {
             ByteArrayOutputStream output = new ByteArrayOutputStream(); byte[] bytes = new byte[4096]; int n;
             while ((n = input.read(bytes)) != -1) output.write(bytes, 0, n);
