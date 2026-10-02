@@ -66,7 +66,7 @@ jobs:
             adb shell svc wifi disable
             adb shell svc data disable
             timeout 240s adb shell am instrument -w com.hhs.photography.offline.test/com.hhs.photography.OfflineInstrumentation | tee offline-test-results.txt
-            adb logcat -d -s AndroidRuntime System.err ActivityTaskManager > offline-device-log.txt
+            adb logcat -d -s AndroidRuntime System.err ActivityTaskManager chromium AlbumUI > offline-device-log.txt
             grep -q 'OFFLINE_TESTS_OK' offline-test-results.txt
             adb pull /sdcard/Android/data/com.hhs.photography.offline/files/ ui-screenshots
             adb uninstall com.hhs.photography.offline.test

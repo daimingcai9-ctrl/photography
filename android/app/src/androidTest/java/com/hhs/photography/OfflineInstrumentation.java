@@ -42,8 +42,9 @@ public final class OfflineInstrumentation extends Instrumentation {
     }
     private String js(MainActivity activity,String script) throws Exception {
         CountDownLatch latch=new CountDownLatch(1);String[] output={null};
-        runOnMainSync(()->activity.uiView().evaluateJavascript(script,value->{output[0]=value;latch.countDown();}));
-        check(latch.await(8,TimeUnit.SECONDS),"JS evaluation timeout");return output[0];
+        String checked="(()=>{try{return ("+script+");}catch(e){return '__JS_ERROR__'+e.name+': '+e.message;}})()";
+        runOnMainSync(()->activity.uiView().evaluateJavascript(checked,value->{output[0]=value;latch.countDown();}));
+        check(latch.await(8,TimeUnit.SECONDS),"JS evaluation timeout");check(output[0]==null || !output[0].contains("__JS_ERROR__"),"UI JavaScript: "+output[0]+" in "+script);return output[0];
     }
     private void waitJs(MainActivity activity,String condition) throws Exception {
         long deadline=System.currentTimeMillis()+20000;
@@ -80,14 +81,14 @@ public final class OfflineInstrumentation extends Instrumentation {
         });
         js(activity,"document.getElementById('nav-gallery').click()");waitJs(activity,"Album.debug().page==='gallery'&&Album.debug().renderedCards>0");screenshot("gallery");
         js(activity,"(()=>{const x=document.getElementById('gallery-search');x.value='不存在的作品';x.dispatchEvent(new Event('input'));return true})()");waitJs(activity,"Album.debug().filteredCount===0");
-        js(activity,"document.getElementById('reset-filters').click()");waitJs(activity,"Album.debug().filteredCount===6");
+        js(activity,"document.getElementById('reset-filters').click()");waitJs(activity,"Album.debug().filteredCount===6&&Album.debug().renderedCards>0");
         js(activity,"document.querySelector('.photo-card').click()");waitJs(activity,"!!Album.debug().detail&&document.querySelector('.viewer-loading').hidden");
         waitJs(activity,"document.getElementById('source-state').textContent.includes('系统原图')&&document.getElementById('viewer-image').complete&&document.getElementById('viewer-image').naturalWidth>0");screenshot("detail");
         js(activity,"document.getElementById('viewer-edit').click()");waitJs(activity,"!document.getElementById('sheet-overlay').hidden&&!!document.querySelector('#sheet-content input')");
         js(activity,"(()=>{document.querySelector('#sheet-content input').value='精美界面编辑测试';document.querySelector('#sheet-content form').requestSubmit();return true})()");
         waitJs(activity,"document.getElementById('sheet-overlay').hidden&&document.getElementById('viewer-title').textContent==='精美界面编辑测试'");
         check("true".equals(js(activity,"document.getElementById('source-state').textContent.includes('系统原图')")),"Edit lost source status");
-        js(activity,"Album.back();Album.navigate('map')");waitJs(activity,"Album.debug().page==='map'&&document.getElementById('map-canvas').width>0");screenshot("map");
+        js(activity,"(Album.back(),Album.navigate('map'))");waitJs(activity,"Album.debug().page==='map'&&document.getElementById('map-canvas').width>0");screenshot("map");
         js(activity,"Album.navigate('analytics')");waitJs(activity,"document.querySelectorAll('.stat-card').length===4");screenshot("analytics");
         js(activity,"Album.navigate('studio')");screenshot("studio");
         check("true".equals(js(activity,"getComputedStyle(document.querySelector('.bottom-nav')).bottom!=='0px'")),"Navigation safe inset lost");
