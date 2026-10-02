@@ -6,6 +6,8 @@ import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.media.ExifInterface;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import java.io.*;
 
 /** Emulates the picker owner's read/persistable grant. Test APK only. */
@@ -27,6 +29,8 @@ public final class ReferenceGrantActivity extends Activity {
                     Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
             }
         } catch (Exception error) { throw new RuntimeException(error); }
-        finish();
+        // Let Android 11 report the first frame before the shell's "am start -W"
+        // waits for launch completion. Finishing inside onCreate can race that report.
+        new Handler(Looper.getMainLooper()).postDelayed(this::finish, 500);
     }
 }

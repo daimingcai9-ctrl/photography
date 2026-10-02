@@ -61,7 +61,8 @@ jobs:
             adb install -r android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
             adb shell svc wifi disable
             adb shell svc data disable
-            adb shell am instrument -w com.hhs.photography.offline.test/com.hhs.photography.OfflineInstrumentation | tee offline-test-results.txt
+            timeout 180s adb shell am instrument -w com.hhs.photography.offline.test/com.hhs.photography.OfflineInstrumentation | tee offline-test-results.txt
+            adb logcat -d -s AndroidRuntime System.err ActivityTaskManager > offline-device-log.txt
             grep -q 'OFFLINE_TESTS_OK' offline-test-results.txt
             adb uninstall com.hhs.photography.offline.test
             adb uninstall com.hhs.photography.offline
@@ -71,6 +72,16 @@ jobs:
             adb pull /sdcard/offline-gallery.png offline-gallery.png
       - name: Name installable APK
         run: cp android/app/build/outputs/apk/release/app-release.apk photography-offline.apk
+      - name: Upload device diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-diagnostics-${{ matrix.android-api }}
+          path: |
+            offline-test-results.txt
+            offline-device-log.txt
+          if-no-files-found: ignore
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.android-api == 30 && 'photography-private-apk' || 'photography-private-apk-android35' }}

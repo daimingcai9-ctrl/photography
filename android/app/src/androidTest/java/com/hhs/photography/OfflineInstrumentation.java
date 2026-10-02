@@ -19,7 +19,9 @@ import java.util.zip.*;
 public final class OfflineInstrumentation extends Instrumentation {
     @Override public void onCreate(Bundle args) { super.onCreate(args); start(); }
     private static void check(boolean condition, String message) { if (!condition) throw new AssertionError(message); }
+    private void stage(String message) { Bundle status = new Bundle(); status.putString("stream", "TEST_STAGE: " + message + "\n"); sendStatus(0, status); }
     private void fixture(String operation) throws Exception {
+        stage("provider " + operation);
         try (ParcelFileDescriptor command = getUiAutomation().executeShellCommand("am start -W -n com.hhs.photography.offline.test/com.hhs.photography.ReferenceGrantActivity --es operation " + operation);
              InputStream input = new ParcelFileDescriptor.AutoCloseInputStream(command)) {
             ByteArrayOutputStream output = new ByteArrayOutputStream(); byte[] bytes = new byte[4096]; int n;
@@ -35,6 +37,7 @@ public final class OfflineInstrumentation extends Instrumentation {
     @Override public void onStart() {
         Bundle result = new Bundle(); PhotoStore store = null, restored = null;
         try {
+            stage("legacy imports and v1 upgrade");
             String library = "test" + System.nanoTime(); store = new PhotoStore(getTargetContext(), library);
             File file = new File(getTargetContext().getCacheDir(), "fixture-" + library + ".jpg");
             Bitmap bitmap = Bitmap.createBitmap(120, 80, Bitmap.Config.ARGB_8888); bitmap.eraseColor(Color.RED);
@@ -88,6 +91,7 @@ public final class OfflineInstrumentation extends Instrumentation {
             boolean refused = false; try { restored.restoreZip(new ByteArrayInputStream(unsafe.toByteArray()), (n,msg) -> {}); } catch (IOException expected) { refused = true; }
             check(refused, "未拒绝恶意 ZIP 路径");
             // A provider in the other APK grants access just as the system picker does.
+            stage("persistent original references");
             fixture("grant");
             getTargetContext().getContentResolver().takePersistableUriPermission(ReferenceFixtureProvider.URI, Intent.FLAG_GRANT_READ_URI_PERMISSION);
             PhotoStore.ImportResult linked = store.importReference(ReferenceFixtureProvider.URI, "引用.jpg", "image/jpeg", 0);
@@ -122,6 +126,7 @@ public final class OfflineInstrumentation extends Instrumentation {
             getTargetContext().getContentResolver().releasePersistableUriPermission(ReferenceFixtureProvider.URI, Intent.FLAG_GRANT_READ_URI_PERMISSION);
             store.trash(added.id); store.erase(added.id); check(store.find(added.id) == null && !store.original(added.id).exists() && file.exists(), "删除触碰系统源片或残留副本");
             check(getTargetContext().getPackageManager().getPackageInfo(getTargetContext().getPackageName(), 4096).requestedPermissions == null, "离线应用不应申请网络/整盘权限");
+            stage("native launch");
             Activity activity = startActivitySync(new Intent(getTargetContext(), MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             waitForIdleSync(); check(activity != null && !activity.isFinishing(), "原生画廊无法启动"); runOnMainSync(activity::finish);
             file.delete(); result.putString("stream", "OFFLINE_TESTS_OK: URI grants, no original copy, reference persistence, revocation, relinking, missing source, portable backup, safe deletion, v1 migration, EXIF, rotation, deduplication, trash, Git export, zip safety, native launch\n");
