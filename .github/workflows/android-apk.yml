@@ -59,8 +59,10 @@ jobs:
             adb shell svc data disable
             adb shell am instrument -w com.hhs.photography.offline.test/com.hhs.photography.OfflineInstrumentation | tee offline-test-results.txt
             grep -q 'OFFLINE_TESTS_OK' offline-test-results.txt
-            adb shell am force-stop com.hhs.photography.offline
-            adb shell monkey -p com.hhs.photography.offline -c android.intent.category.LAUNCHER 1
+            adb uninstall com.hhs.photography.offline.test
+            adb uninstall com.hhs.photography.offline
+            adb install android/app/build/outputs/apk/release/app-release.apk
+            adb shell am start -W -n com.hhs.photography.offline/com.hhs.photography.MainActivity
             adb shell screencap -p /sdcard/offline-gallery.png
             adb pull /sdcard/offline-gallery.png offline-gallery.png
       - name: Name installable APK

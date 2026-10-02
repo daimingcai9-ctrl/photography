@@ -2,6 +2,7 @@ package com.hhs.photography;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.database.Cursor;
@@ -303,7 +304,10 @@ public final class MainActivity extends Activity {
     private void alert(String title, String msg) { if (!isFinishing() && !isDestroyed()) new AlertDialog.Builder(this).setTitle(title).setMessage(msg).setPositiveButton("知道了", null).show(); }
     private void ui(Runnable action) { runOnUiThread(() -> { if (!isDestroyed() && !isFinishing()) action.run(); }); }
     private void back() { if (busy) { Toast.makeText(this,"正在处理照片，请等待完成后退出；已完成部分已保存",Toast.LENGTH_LONG).show(); } else if (detail) showLibrary(); else finish(); }
-    @Override public void onBackPressed() { back(); }
+    // API 33+ uses the native OnBackInvokedCallback registered in onCreate.
+    // This override is retained only for Android 8–12, without AndroidX dependencies.
+    @SuppressLint("GestureBackNavigation")
+    @Override public void onBackPressed() { if (Build.VERSION.SDK_INT < 33) back(); else super.onBackPressed(); }
     @Override public void onConfigurationChanged(Configuration config) { super.onConfigurationChanged(config); if (grid != null) grid.setNumColumns(config.orientation == Configuration.ORIENTATION_LANDSCAPE ? 4 : 2); }
     @Override protected void onDestroy() {
         worker.shutdownNow(); thumbs.evictAll();
