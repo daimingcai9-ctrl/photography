@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ColorCategory, COLOR_CATEGORY_COLORS } from "@/lib/colors";
 import { useEditedPhotos } from "@/lib/store";
-import { LOCAL_STUDIO_ENABLED } from "@/lib/config";
+import { LOCAL_STUDIO_ENABLED, STUDIO_ENABLED } from "@/lib/config";
 import ColorBar from "@/components/ColorBar";
 import PhotoGrid from "@/components/PhotoGrid";
 import PhotoModal from "@/components/PhotoModal";
@@ -94,7 +94,7 @@ function GalleryContent() {
             <h1 className="mb-2 text-4xl font-bold">色彩画廊</h1>
             <p className="text-white/60">用色彩重新发现每一张作品 · 共 {allPhotos.length} 张</p>
           </div>
-          <Link href="/studio" className="ml-4 flex-shrink-0 rounded-full bg-white px-4 py-2 text-sm font-medium text-black transition-colors hover:bg-white/90">上传照片</Link>
+          <Link href="/studio" className="ml-4 flex-shrink-0 rounded-full bg-white px-4 py-2 text-sm font-medium text-black transition-colors hover:bg-white/90">{STUDIO_ENABLED ? "上传照片" : "本地管理"}</Link>
         </div>
 
         <GalleryFilters

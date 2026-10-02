@@ -4,6 +4,7 @@ import { MAX_IMAGE_BYTES, MAX_THUMB_BYTES, validateEdit, validatePhoto, validId,
 import { authenticated, constantEqual, createSession, jpegDimensions, limitedBody, sessionCookie } from "../../lib/server/auth";
 
 export interface Env {
+  PHOTO_STORAGE_MODE?: string;
   PHOTO_DB?: D1Database;
   PHOTO_BUCKET?: R2Bucket;
   ADMIN_PASSWORD?: string;
@@ -23,6 +24,12 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
   try {
     if (!["GET", "HEAD", "POST", "PATCH", "DELETE"].includes(method)) return json({ error: "不支持的请求方法" }, 405);
     if (method !== "GET" && method !== "HEAD" && request.headers.get("Origin") !== url.origin) return json({ error: "请求来源不允许" }, 403);
+    // Local-first deployments never read/write cloud storage, even if old bindings exist.
+    if (env.PHOTO_STORAGE_MODE !== "cloud") {
+      if (route === "session" && method === "GET") return json({ configured: false, authenticated: false });
+      if (route === "photos" && method === "GET") return json({ photos: [], deletedIds: [], configured: false });
+      return json({ error: "当前使用本地存储，请在电脑上运行 pnpm studio" }, 503);
+    }
     if (route === "session" && method === "GET") return json({ configured: configured(env), authenticated: await authenticated(request, env.SESSION_SECRET) });
     if (route === "logout" && method === "POST") return json({ success: true }, 200, { "Set-Cookie": sessionCookie("", url.protocol === "https:", true) });
     if (route === "photos" && method === "GET") {

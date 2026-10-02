@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
-import { API_BASE } from "./config";
+import { apiBase, STUDIO_ENABLED } from "./config";
 import { getAllPhotos, type Photo } from "./photos";
 import { validateEdit, validatePhoto, type PhotoEdit } from "./photo-schema";
 
 type Snapshot = { photos: Photo[]; deletedIds: string[]; loaded: boolean; error: string; authenticated: boolean; configured: boolean };
-const initial: Snapshot = { photos: [], deletedIds: [], loaded: false, error: "", authenticated: false, configured: false };
+const initial: Snapshot = { photos: [], deletedIds: [], loaded: !STUDIO_ENABLED, error: "", authenticated: false, configured: false };
 let current = initial;
 const listeners = new Set<() => void>();
 let pending: Promise<void> | null = null;
@@ -18,7 +18,8 @@ function snapshot() { return current; }
 function serverSnapshot() { return initial; }
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE}/${path}`, { ...init, credentials: "include", cache: "no-store", signal: init.signal || AbortSignal.timeout(90000) });
+  if (!STUDIO_ENABLED) throw new Error("当前站点仅展示已发布作品，请使用本地相册管理");
+  const response = await fetch(`${apiBase()}/${path}`, { ...init, credentials: "include", cache: "no-store", signal: init.signal || AbortSignal.timeout(90000) });
   const result = await response.json().catch(() => null);
   if (!response.ok) {
     if (response.status === 401) publish({ authenticated: false });
@@ -28,6 +29,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
 }
 
 export async function refreshPhotos(force = false): Promise<void> {
+  if (!STUDIO_ENABLED) return;
   if (pending) return force ? pending.then(() => refreshPhotos(true)) : pending;
   if (!force && Date.now() < nextRefresh) return;
   nextRefresh = Date.now() + 15000;
@@ -50,6 +52,7 @@ export async function refreshPhotos(force = false): Promise<void> {
 export function usePhotoStore() {
   const state = useSyncExternalStore(subscribe, snapshot, serverSnapshot);
   useEffect(() => {
+    if (!STUDIO_ENABLED) return;
     void refreshPhotos();
     const refresh = () => { if (document.visibilityState === "visible") void refreshPhotos(); };
     const timer = window.setInterval(refresh, 30000);

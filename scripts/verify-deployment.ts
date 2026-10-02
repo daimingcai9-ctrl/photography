@@ -11,18 +11,22 @@ async function fetchChecked(route: string, asset = false) {
   return response;
 }
 async function main() {
+  const sample = photos.photos[0];
+  if (!sample) throw new Error("相册没有照片，无法验证详情页");
   const marker = await (await fetchChecked(`/build-info.json?revision=${revision}`)).json();
-  if (marker.revision !== revision || marker.features !== "batch-studio-v1") throw new Error("新构建尚未上线");
+  if (marker.revision !== revision || marker.features !== "local-studio-v1") throw new Error("新构建尚未上线");
   let gallery = "";
-  for (const route of ["/", "/gallery", "/map", "/analytics", `/photo/${photos.photos.find((p) => p.title === "作品-1")!.id}`, "/studio", "/photo"]) {
+  for (const route of ["/", "/gallery", "/map", "/analytics", `/photo/${encodeURIComponent(sample.id)}`, "/studio", "/photo"]) {
     const response = await fetchChecked(route);
     if (route === "/gallery") gallery = await response.text();
+    if (route === "/studio" && !(await response.text()).includes("本地相册管理")) throw new Error("线上管理说明未更新");
   }
   const assets = [...new Set(Array.from(gallery.matchAll(/(?:src|href)="([^"?#]*\/_next\/static\/[^"?#]+\.(?:js|css))[^\"]*"/g), (m) => m[1]))];
   if (!assets.length) throw new Error("画廊未引用静态 JS/CSS");
   for (const asset of assets) await fetchChecked(asset, true);
   const session = await (await fetchChecked("/api/session")).json();
   const listing = await (await fetchChecked("/api/photos")).json();
+  if (session.configured || session.authenticated || listing.photos.length) throw new Error("线上未正确关闭云端管理");
   console.log(JSON.stringify({ revision, builtAt: marker.builtAt, checkedAssets: assets.length, uploadConfigured: session.configured, anonymousAuthenticated: session.authenticated, remotePhotos: listing.photos.length }));
 }
 main().catch((error) => { console.error(error instanceof Error ? error.message : "部署验证失败"); process.exitCode = 1; });

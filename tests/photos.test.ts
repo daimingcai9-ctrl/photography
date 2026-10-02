@@ -71,7 +71,7 @@ function environment() {
   const bucket = { async put(key: string, value: Uint8Array) { objects.set(key, value); }, async get(key: string) {
     const bytes = objects.get(key); return bytes ? { body: new Blob([new Uint8Array(bytes)]).stream(), httpEtag: '"test"' } : null;
   }, async delete(keys: string | string[]) { for (const key of typeof keys === "string" ? [keys] : keys) objects.delete(key); } };
-  const env = { PHOTO_DB: db, PHOTO_BUCKET: bucket, ADMIN_PASSWORD: "test-private-password", SESSION_SECRET: "test-session-secret-at-least-32-characters" } as unknown as Env;
+  const env = { PHOTO_STORAGE_MODE: "cloud", PHOTO_DB: db, PHOTO_BUCKET: bucket, ADMIN_PASSWORD: "test-private-password", SESSION_SECRET: "test-session-secret-at-least-32-characters" } as unknown as Env;
   return { env, sqlite, objects };
 }
 test("云端完整上传闭环：授权、CSRF、重试幂等、读取、编辑、删除及限流", async () => {

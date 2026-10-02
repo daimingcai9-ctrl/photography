@@ -44,7 +44,7 @@ if (mode === "inspect") {
 } else if (mode === "build-config") {
   const p = await api("");
   if (p.subdomain !== "photography-hhs.pages.dev") throw new Error("相册项目域名不匹配");
-  const env_vars = { NODE_VERSION: { type: "plain_text", value: "22" }, PNPM_VERSION: { type: "plain_text", value: "11.3.0" }, NEXT_PUBLIC_ENABLE_LOCAL_STUDIO: { type: "plain_text", value: "false" } };
+  const env_vars = { NODE_VERSION: { type: "plain_text", value: "22" }, PNPM_VERSION: { type: "plain_text", value: "11.3.0" }, NEXT_PUBLIC_ENABLE_LOCAL_STUDIO: { type: "plain_text", value: "false" }, NEXT_PUBLIC_ENABLE_REMOTE_STUDIO: { type: "plain_text", value: "false" } };
   await api("", "PATCH", { deployment_configs: { production: { env_vars }, preview: { env_vars } } });
   console.log("Cloudflare 构建版本和公开模式已设置。");
 } else throw new Error("用法：node --import tsx scripts/cloud-admin.ts inspect|secrets|status|build-config");

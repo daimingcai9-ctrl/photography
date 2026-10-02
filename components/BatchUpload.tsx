@@ -5,6 +5,7 @@ import { apiRequest, upsertPhoto } from "@/lib/store";
 import { MAX_BATCH_SIZE, type Photo } from "@/lib/photo-schema";
 import { preparePhoto } from "@/lib/prepare-photo";
 import { CITIES } from "@/lib/exif";
+import { LOCAL_STUDIO_ENABLED } from "@/lib/config";
 
 type QueueItem = {
   id: string; file?: File; name: string; status: "queued" | "processing" | "uploading" | "done" | "error";
@@ -86,11 +87,11 @@ export default function BatchUpload({ onUploaded }: { onUploaded?: () => void })
   };
   const done = items.filter((item) => item.status === "done").length;
   const pending = items.filter((item) => item.file && (item.status === "queued" || item.status === "error")).length;
-  const labels = { queued: "等待上传", processing: "读取信息 / 处理图片", uploading: "正在保存", done: "已发布", error: "未保存" };
+  const labels = { queued: "等待上传", processing: "读取信息 / 处理图片", uploading: "正在保存", done: LOCAL_STUDIO_ENABLED ? "已保存到本机" : "已发布", error: "未保存" };
   return (
     <section className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h2 className="text-xl font-semibold">批量上传</h2><p className="mt-1 text-sm text-white/50">电脑选文件或拖入照片，手机打开相册多选；每批最多 100 张。</p></div>
+        <div><h2 className="text-xl font-semibold">批量上传</h2><p className="mt-1 text-sm text-white/50">{LOCAL_STUDIO_ENABLED ? "电脑选文件或拖入照片，逐张保存到硬盘；每批最多 100 张，不自动发布。" : "电脑选文件或拖入照片，手机打开相册多选；每批最多 100 张。"}</p></div>
         <button type="button" disabled={running} onClick={() => inputRef.current?.click()} className="rounded-full bg-white px-5 py-3 text-sm font-medium text-black disabled:opacity-40">选择照片 / 打开相册</button>
       </div>
       <input ref={inputRef} type="file" multiple accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/avif,.heic,.heif" className="sr-only" aria-label="批量选择照片" onChange={(event) => { if (event.target.files) addFiles(event.target.files); }} disabled={running} />

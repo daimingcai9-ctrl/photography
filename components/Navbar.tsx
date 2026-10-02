@@ -9,7 +9,7 @@ const navItems = [
   { href: "/gallery", label: "色彩画廊" },
   { href: "/map", label: "地点" },
   { href: "/analytics", label: "数据" },
-  { href: "/studio", label: "上传" },
+  { href: "/studio", label: "管理" },
 ];
 
 export default function Navbar() {
