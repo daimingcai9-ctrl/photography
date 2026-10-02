@@ -21,6 +21,10 @@
   function button(label,action,cls="button secondary") { const value=node("button",cls,label); value.type="button"; value.addEventListener("click",action); return value; }
   function image(url,alt,cls="") { const img=node("img",cls); img.alt=alt || ""; img.decoding="async"; img.src=url; img.addEventListener("load",() => img.classList.add("loaded"),{once:true}); return img; }
   function description(photo) { return photo.date+" · "+photo.location.name; }
+  function transition(element,frames,options) {
+    if (!state.motion || typeof element.animate !== "function") return null;
+    try { return element.animate(frames,options); } catch { return null; } // Older WebViews must still be navigable.
+  }
   function decodedImage(url) {
     return new Promise((resolve,reject) => {
       const img=new Image(); img.decoding="async";
@@ -79,7 +83,7 @@
     if (state.detail) closeViewer(false);
     const previous=$("page-"+state.page); pageAnimations.get(previous)?.cancel(); previous.hidden=true; previous.classList.remove("active","entering");
     state.page=page; const next=$("page-"+page); pageAnimations.get(next)?.cancel(); next.hidden=false; next.classList.add("active");
-    if (state.motion && next.animate) pageAnimations.set(next,next.animate([{opacity:.92,transform:"translateY(8px)"},{opacity:1,transform:"none"}],{duration:240,easing:"ease-out"}));
+    pageAnimations.set(next,transition(next,[{opacity:.92,transform:"translateY(8px)"},{opacity:1,transform:"none"}],{duration:240,easing:"ease-out"}));
     document.querySelectorAll(".bottom-nav button").forEach((item) => { item.classList.toggle("selected",item.dataset.page === page); item.setAttribute("aria-current",item.dataset.page === page ? "page" : "false"); });
     $("nav-indicator").style.transform="translateX("+(pages.indexOf(page)*100)+"%)";
     if (page === "gallery") { state.range=""; requestAnimationFrame(renderGrid); }
@@ -180,7 +184,7 @@
     const opening=!state.detail; if (opening) returnFocus=document.activeElement;
     state.detail=id; state.sequence=sequence || state.photos.map((p) => p.id); haptic();
     const viewer=$("viewer"),epoch=++viewerEpoch; viewerAnimation?.cancel(); viewer.hidden=false; viewer.classList.remove("opening");
-    if (opening && state.motion && viewer.animate) viewerAnimation=viewer.animate([{opacity:.92,transform:"translateY(12px)"},{opacity:1,transform:"none"}],{duration:240,easing:"ease-out"});
+    if (opening) viewerAnimation=transition(viewer,[{opacity:.92,transform:"translateY(12px)"},{opacity:1,transform:"none"}],{duration:240,easing:"ease-out"});
     $("pages").setAttribute("aria-hidden","true"); document.querySelector(".bottom-nav").setAttribute("aria-hidden","true");
     $("viewer-stage").style.touchAction="none"; resetZoom(); $("viewer-scroll").scrollTop=0; fillDetail(photo);
     const job={id,photo,epoch};
@@ -191,7 +195,7 @@
   function showFrame(img,photo,epoch) {
     if (epoch !== viewerEpoch || state.detail !== photo.id) return;
     img.id="viewer-image"; img.alt=description(photo); img.dataset.photo=photo.id; $("viewer-image").replaceWith(img);
-    if (state.motion && img.animate) img.animate([{opacity:.94,transform:"translateX(5px)"},{opacity:1,transform:"none"}],{duration:180,easing:"ease-out"});
+    transition(img,[{opacity:.94,transform:"translateX(5px)"},{opacity:1,transform:"none"}],{duration:180,easing:"ease-out"});
   }
   async function pumpPreview() {
     if (previewRunning) return; previewRunning=true;
@@ -229,8 +233,8 @@
     if (!state.detail) return; const epoch=++viewerEpoch,viewer=$("viewer"); viewerAnimation?.cancel(); previewJob=null;
     state.detail=null; $("pages").removeAttribute("aria-hidden"); document.querySelector(".bottom-nav").removeAttribute("aria-hidden");
     const finish=() => { if (epoch === viewerEpoch && !state.detail) { viewer.hidden=true; $("viewer-image").removeAttribute("src"); if (!previewRunning) run("closePreview"); } };
-    if (animate && state.motion && viewer.animate) { viewerAnimation=viewer.animate([{opacity:1},{opacity:0,transform:"translateY(12px)"}],{duration:180,easing:"ease-out"}); viewerAnimation.onfinish=finish; }
-    else finish();
+    viewerAnimation=animate ? transition(viewer,[{opacity:1,transform:"none"},{opacity:0,transform:"translateY(12px)"}],{duration:180,easing:"ease-out"}) : null;
+    if (viewerAnimation) viewerAnimation.onfinish=finish; else finish();
     if (returnFocus?.isConnected) returnFocus.focus({preventScroll:true}); resetZoom();
   }
   function adjacent(direction) { const index=state.sequence.indexOf(state.detail)+direction,id=state.sequence[index]; if (!id) return; const sequence=state.sequence; openPhoto(id,null,sequence); }

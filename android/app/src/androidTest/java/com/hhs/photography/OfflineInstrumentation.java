@@ -209,7 +209,12 @@ public final class OfflineInstrumentation extends Instrumentation {
             getTargetContext().getContentResolver().releasePersistableUriPermission(ReferenceFixtureProvider.URI, Intent.FLAG_GRANT_READ_URI_PERMISSION);
             store.trash(added.id); store.erase(added.id); check(store.find(added.id) == null && !store.original(added.id).exists() && file.exists(), "删除触碰系统源片或残留副本");
             String[] permissions=getTargetContext().getPackageManager().getPackageInfo(getTargetContext().getPackageName(),4096).requestedPermissions;
-            check(permissions != null && permissions.length == 1 && permissions[0].equals(android.Manifest.permission.ACCESS_MEDIA_LOCATION),"Only photo EXIF permission is allowed; no network/live location/broad storage");
+            stage("requested permissions " + Arrays.toString(permissions));
+            check(permissions != null && Arrays.asList(permissions).contains(android.Manifest.permission.ACCESS_MEDIA_LOCATION),"Photo EXIF permission is missing");
+            // Android automatically adds this selected-only permission when ACCESS_MEDIA_LOCATION
+            // is declared. It does NOT grant broad media access or network/live location access.
+            for (String permission : permissions) check(permission.equals(android.Manifest.permission.ACCESS_MEDIA_LOCATION)
+                || permission.equals("android.permission.READ_MEDIA_VISUAL_USER_SELECTED"),"Unexpected permission: " + permission);
             uiTests();
             file.delete(); result.putString("stream", "OFFLINE_TESTS_OK: URI grants, no original copy, reference persistence, revocation, relinking, missing source, portable backup, safe deletion, v1 migration, EXIF, rotation, deduplication, trash, Git export, zip safety, native launch\n");
             finish(Activity.RESULT_OK, result);
