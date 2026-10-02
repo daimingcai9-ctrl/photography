@@ -15,8 +15,9 @@ public final class ReferenceFixtureProvider extends ContentProvider {
     @Override public boolean onCreate() { return true; }
     @Override public String getType(Uri uri) { return "image/jpeg"; }
     @Override public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
-        if (!URI.equals(uri) || !"r".equals(mode)) throw new FileNotFoundException("Unknown/read-only fixture");
-        return ParcelFileDescriptor.open(new File(getContext().getCacheDir(), "reference.jpg"), ParcelFileDescriptor.MODE_READ_ONLY);
+        String path=uri.getPath(); boolean demo=path != null && path.matches("/demo[0-5]");
+        if ((!URI.equals(uri) && !demo) || !"r".equals(mode)) throw new FileNotFoundException("Unknown/read-only fixture");
+        return ParcelFileDescriptor.open(new File(getContext().getCacheDir(), demo ? path.substring(1)+".jpg" : "reference.jpg"), ParcelFileDescriptor.MODE_READ_ONLY);
     }
     @Override public Cursor query(Uri uri, String[] projection, String selection, String[] args, String sort) {
         MatrixCursor cursor = new MatrixCursor(new String[]{OpenableColumns.DISPLAY_NAME}); cursor.addRow(new String[]{"引用原图.jpg"}); return cursor;

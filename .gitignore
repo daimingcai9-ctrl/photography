@@ -57,3 +57,4 @@ android/**/build/
 *.jks
 *.keystore
 *.p12
+android/app/src/androidTest/assets/demo/

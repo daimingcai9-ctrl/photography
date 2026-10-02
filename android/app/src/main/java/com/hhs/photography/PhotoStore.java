@@ -47,13 +47,16 @@ public final class PhotoStore extends SQLiteOpenHelper {
 
     public PhotoStore(Context context) throws IOException { this(context, "main"); }
     PhotoStore(Context context, String library) throws IOException {
+        this(context, library, true);
+    }
+    PhotoStore(Context context, String library, boolean cleanup) throws IOException {
         super(context, "offline-" + library + ".db", null, 2);
         resolver = context.getContentResolver();
         root = new File(context.getNoBackupFilesDir(), "album-" + library);
         if (!root.isDirectory() && !root.mkdirs()) throw new IOException("无法创建手机相册存储");
         getWritableDatabase();
         File[] files = root.listFiles();
-        if (files != null) for (File f : files) if (f.getName().endsWith(".part")) f.delete();
+        if (cleanup && files != null) for (File f : files) if (f.getName().endsWith(".part")) f.delete();
     }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE photos(id TEXT PRIMARY KEY, metadata TEXT NOT NULL, original_name TEXT NOT NULL, mime TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0, date TEXT NOT NULL, source_uri TEXT NOT NULL DEFAULT '')");
@@ -89,6 +92,12 @@ public final class PhotoStore extends SQLiteOpenHelper {
     public ImportResult importReference(Uri uri, String name, String mime, long modified) throws Exception {
         requireGrant(uri);
         try (InputStream input = openUri(uri)) { return importPhoto(input, name, mime, modified, null, null, uri); }
+    }
+    public ImportResult relinkReference(String id, Uri uri, String name, String mime, long modified) throws Exception {
+        Record row = find(id);
+        if (row == null || row.deleted || !row.referenced()) throw new IOException("只能重新关联当前引用的原图");
+        requireGrant(uri);
+        try (InputStream input = openUri(uri)) { return importPhoto(input, name, mime, modified, id, null, uri); }
     }
     private void requireGrant(Uri uri) throws IOException {
         if (!"content".equals(uri.getScheme())) throw new IOException("仅支持系统提供者的原图引用");
@@ -141,7 +150,7 @@ public final class PhotoStore extends SQLiteOpenHelper {
             if (size == 0) throw new IOException("图片为空");
             StringBuilder hash = new StringBuilder(); for (byte b : digest.digest()) hash.append(String.format(Locale.ROOT, "%02x", b & 255));
             String id = "mobile-" + hash;
-            if (expected != null && !id.equals(expected)) throw new IOException("备份原片校验失败");
+            if (expected != null && !id.equals(expected)) throw new IOException(uri == null ? "备份原片校验失败" : "所选图片不是同一张原图，未替换引用或新建照片；请重新选择原文件");
             Record existing = find(id);
             if (existing != null) {
                 // Re-selecting the same bytes repairs a missing/revoked reference without

@@ -17,7 +17,17 @@ public final class ReferenceGrantActivity extends Activity {
         File file = new File(getCacheDir(), "reference.jpg");
         try {
             String action = getIntent().getStringExtra("operation");
-            if ("delete".equals(action)) { if (!file.delete()) throw new IOException("fixture delete failed"); }
+            if ("gallery".equals(action) || "gallerygrant".equals(action)) {
+                for(int i=0;i<6;i++) {
+                    File demo=new File(getCacheDir(),"demo"+i+".jpg");
+                    if("gallery".equals(action)) try(InputStream input=getAssets().open("demo/"+i+".jpg");OutputStream output=new FileOutputStream(demo)) {
+                        byte[] bytes=new byte[4096];int n;while((n=input.read(bytes))!=-1)output.write(bytes,0,n);
+                    }
+                    if(!demo.isFile() || demo.length()==0)throw new IOException("App deleted provider-owned original");
+                    grantUriPermission("com.hhs.photography.offline",android.net.Uri.parse("content://com.hhs.photography.offline.test.references/demo"+i),Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                }
+            }
+            else if ("delete".equals(action)) { if (!file.delete()) throw new IOException("fixture delete failed"); }
             else if ("revoke".equals(action)) revokeUriPermission(ReferenceFixtureProvider.URI, Intent.FLAG_GRANT_READ_URI_PERMISSION);
             else {
                 Bitmap bitmap = Bitmap.createBitmap(120, 80, Bitmap.Config.ARGB_8888); bitmap.eraseColor(Color.GREEN);

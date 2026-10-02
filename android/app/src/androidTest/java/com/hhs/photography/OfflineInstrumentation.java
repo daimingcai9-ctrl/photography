@@ -11,6 +11,10 @@ import android.media.ExifInterface;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import org.json.JSONObject;
+import org.json.JSONArray;
+import android.net.Uri;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.io.*;
 import java.util.*;
 import java.util.zip.*;
@@ -34,6 +38,71 @@ public final class OfflineInstrumentation extends Instrumentation {
     private static void copy(File source, File destination) throws IOException {
         try (InputStream input = new FileInputStream(source); OutputStream output = new FileOutputStream(destination)) {
             byte[] bytes = new byte[4096]; int n; while ((n = input.read(bytes)) != -1) output.write(bytes, 0, n);
+        }
+    }
+    private String js(MainActivity activity,String script) throws Exception {
+        CountDownLatch latch=new CountDownLatch(1);String[] output={null};
+        runOnMainSync(()->activity.uiView().evaluateJavascript(script,value->{output[0]=value;latch.countDown();}));
+        check(latch.await(8,TimeUnit.SECONDS),"JS evaluation timeout");return output[0];
+    }
+    private void waitJs(MainActivity activity,String condition) throws Exception {
+        long deadline=System.currentTimeMillis()+20000;
+        while(System.currentTimeMillis()<deadline) {if("true".equals(js(activity,condition)))return;Thread.sleep(150);}
+        throw new AssertionError("Offline UI condition failed: "+condition+"; "+js(activity,"window.Album&&Album.debug()"));
+    }
+    private void screenshot(String name) throws Exception {
+        waitForIdleSync();Thread.sleep(650);Bitmap bitmap=getUiAutomation().takeScreenshot();check(bitmap!=null,"No screenshot");
+        try(OutputStream output=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),"ui-"+name+".png"))){bitmap.compress(Bitmap.CompressFormat.PNG,100,output);}finally{bitmap.recycle();}
+    }
+    private void uiTests() throws Exception {
+        stage("bundled offline UI, real referenced public fixtures");fixture("gallery");
+        JSONArray fixtures;try(InputStream input=getContext().getAssets().open("demo/photos.json")){ByteArrayOutputStream bytes=new ByteArrayOutputStream();byte[] buffer=new byte[4096];int n;while((n=input.read(buffer))!=-1)bytes.write(buffer,0,n);fixtures=new JSONArray(bytes.toString("UTF-8"));}
+        ArrayList<String> ids=new ArrayList<>();
+        try(PhotoStore main=new PhotoStore(getTargetContext())) {
+            for(int i=0;i<6;i++) {
+                Uri uri=Uri.parse("content://com.hhs.photography.offline.test.references/demo"+i);
+                getTargetContext().getContentResolver().takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                String id=main.importReference(uri,"测试作品"+i+".jpg","image/jpeg",0).id;ids.add(id);
+                JSONObject edit=new JSONObject(main.find(id).photo.toString()),source=fixtures.getJSONObject(i);
+                for(String key:new String[]{"title","date","location","camera","tags"})edit.put(key,source.get(key));main.edit(id,edit);
+                check(!main.original(id).exists(),"UI fixture copied source original");
+            }
+            boolean wrong=false;
+            try{main.relinkReference(ids.get(0),Uri.parse("content://com.hhs.photography.offline.test.references/demo1"),"错误原图.jpg","image/jpeg",0);}catch(IOException expected){wrong=true;}
+            check(wrong && main.list(false).size()==6,"Wrong re-link modified album");
+        }
+        MainActivity activity=(MainActivity)startActivitySync(new Intent(getTargetContext(),MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        waitJs(activity,"!!window.Album&&Album.debug().ready");
+        check("6".equals(js(activity,"Album.debug().photoCount")),"Native snapshot not delivered");screenshot("home");
+        runOnMainSync(()->{
+            for(String blocked:new String[]{"https://example.com/ui/app.js","file:///data/data/private","https://appassets.androidplatform.net/ui/../private","https://appassets.androidplatform.net/media/raw/"+ids.get(0)+".jpg"})check(activity.resource(Uri.parse(blocked),"GET").getStatusCode()==404,"Resource escaped allowlist");
+            check(activity.resource(Uri.parse(MainActivity.PAGE),"POST").getStatusCode()==404,"POST resource allowed");
+        });
+        js(activity,"document.getElementById('nav-gallery').click()");waitJs(activity,"Album.debug().page==='gallery'&&Album.debug().renderedCards>0");screenshot("gallery");
+        js(activity,"(()=>{const x=document.getElementById('gallery-search');x.value='不存在的作品';x.dispatchEvent(new Event('input'));return true})()");waitJs(activity,"Album.debug().filteredCount===0");
+        js(activity,"document.getElementById('reset-filters').click()");waitJs(activity,"Album.debug().filteredCount===6");
+        js(activity,"document.querySelector('.photo-card').click()");waitJs(activity,"!!Album.debug().detail&&document.querySelector('.viewer-loading').hidden");
+        waitJs(activity,"document.getElementById('source-state').textContent.includes('系统原图')&&document.getElementById('viewer-image').complete&&document.getElementById('viewer-image').naturalWidth>0");screenshot("detail");
+        js(activity,"document.getElementById('viewer-edit').click()");waitJs(activity,"!document.getElementById('sheet-overlay').hidden&&!!document.querySelector('#sheet-content input')");
+        js(activity,"(()=>{document.querySelector('#sheet-content input').value='精美界面编辑测试';document.querySelector('#sheet-content form').requestSubmit();return true})()");
+        waitJs(activity,"document.getElementById('sheet-overlay').hidden&&document.getElementById('viewer-title').textContent==='精美界面编辑测试'");
+        check("true".equals(js(activity,"document.getElementById('source-state').textContent.includes('系统原图')")),"Edit lost source status");
+        js(activity,"Album.back();Album.navigate('map')");waitJs(activity,"Album.debug().page==='map'&&document.getElementById('map-canvas').width>0");screenshot("map");
+        js(activity,"Album.navigate('analytics')");waitJs(activity,"document.querySelectorAll('.stat-card').length===4");screenshot("analytics");
+        js(activity,"Album.navigate('studio')");screenshot("studio");
+        check("true".equals(js(activity,"getComputedStyle(document.querySelector('.bottom-nav')).bottom!=='0px'")),"Navigation safe inset lost");
+        js(activity,"Album.pause(true)");check("true".equals(js(activity,"document.body.classList.contains('paused')")),"Pause doesn't stop UI animation");js(activity,"Album.pause(false)");
+        runOnMainSync(activity::finish);waitForIdleSync();
+        // Emulators only: prove shared display is not a raw copy; deleting never touches provider.
+        try(PhotoStore main=new PhotoStore(getTargetContext())) {
+            String id=ids.get(0);Uri shared=Uri.parse("content://com.hhs.photography.offline.share/image/"+id);
+            File partial=new File(main.image(id).getParentFile(),"in-progress.part");check(partial.createNewFile(),"Partial fixture");
+            try(InputStream input=getTargetContext().getContentResolver().openInputStream(shared)){check(input!=null&&input.read()!=-1,"Display share unavailable");}
+            check(partial.isFile(),"Opening share removed another worker's temporary file");partial.delete();
+            boolean writeRejected=false;try{getTargetContext().getContentResolver().openFileDescriptor(shared,"w");}catch(FileNotFoundException expected){writeRejected=true;}check(writeRejected,"Share provider writable");
+            for(String photo:ids){main.trash(photo);main.restore(photo);main.trash(photo);main.erase(photo);}
+            fixture("gallerygrant");
+            try(InputStream input=getTargetContext().getContentResolver().openInputStream(Uri.parse("content://com.hhs.photography.offline.test.references/demo0"))){check(input!=null&&input.read()!=-1,"UI deletion touched external original");}
         }
     }
     @Override public void onStart() {
@@ -128,9 +197,7 @@ public final class OfflineInstrumentation extends Instrumentation {
             getTargetContext().getContentResolver().releasePersistableUriPermission(ReferenceFixtureProvider.URI, Intent.FLAG_GRANT_READ_URI_PERMISSION);
             store.trash(added.id); store.erase(added.id); check(store.find(added.id) == null && !store.original(added.id).exists() && file.exists(), "删除触碰系统源片或残留副本");
             check(getTargetContext().getPackageManager().getPackageInfo(getTargetContext().getPackageName(), 4096).requestedPermissions == null, "离线应用不应申请网络/整盘权限");
-            stage("native launch");
-            Activity activity = startActivitySync(new Intent(getTargetContext(), MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-            waitForIdleSync(); check(activity != null && !activity.isFinishing(), "原生画廊无法启动"); runOnMainSync(activity::finish);
+            uiTests();
             file.delete(); result.putString("stream", "OFFLINE_TESTS_OK: URI grants, no original copy, reference persistence, revocation, relinking, missing source, portable backup, safe deletion, v1 migration, EXIF, rotation, deduplication, trash, Git export, zip safety, native launch\n");
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {

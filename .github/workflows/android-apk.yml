@@ -40,7 +40,9 @@ jobs:
         env:
           HHS_KEYSTORE_FILE: ${{ runner.temp }}/offline-signing.p12
           HHS_SIGNING_PASSWORD: ${{ secrets.HHS_ANDROID_SIGNING_PASSWORD }}
-        run: gradle -p android assembleRelease assembleDebug assembleDebugAndroidTest lintRelease --no-daemon
+        run: |
+          node scripts/prepare-android-fixtures.mjs
+          gradle -p android assembleRelease assembleDebug assembleDebugAndroidTest lintRelease --no-daemon
       - name: Enable KVM for the disposable test emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -57,17 +59,21 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -memory 1536 -camera-back none -camera-front none
           script: |
+            adb shell wm size 1200x2670
+            adb shell wm density 480
             adb install -r android/app/build/outputs/apk/debug/app-debug.apk
             adb install -r android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
             adb shell svc wifi disable
             adb shell svc data disable
-            timeout 180s adb shell am instrument -w com.hhs.photography.offline.test/com.hhs.photography.OfflineInstrumentation | tee offline-test-results.txt
+            timeout 240s adb shell am instrument -w com.hhs.photography.offline.test/com.hhs.photography.OfflineInstrumentation | tee offline-test-results.txt
             adb logcat -d -s AndroidRuntime System.err ActivityTaskManager > offline-device-log.txt
             grep -q 'OFFLINE_TESTS_OK' offline-test-results.txt
+            adb pull /sdcard/Android/data/com.hhs.photography.offline/files/ ui-screenshots
             adb uninstall com.hhs.photography.offline.test
             adb uninstall com.hhs.photography.offline
             adb install android/app/build/outputs/apk/release/app-release.apk
             adb shell am start -W -n com.hhs.photography.offline/com.hhs.photography.MainActivity
+            sleep 3
             adb shell screencap -p /sdcard/offline-gallery.png
             adb pull /sdcard/offline-gallery.png offline-gallery.png
       - name: Name installable APK
@@ -80,6 +86,7 @@ jobs:
           path: |
             offline-test-results.txt
             offline-device-log.txt
+            android/app/build/reports/lint-results-release.html
           if-no-files-found: ignore
           retention-days: 7
       - uses: actions/upload-artifact@v4
@@ -89,4 +96,5 @@ jobs:
             photography-offline.apk
             offline-test-results.txt
             offline-gallery.png
+            ui-screenshots/
           retention-days: 30

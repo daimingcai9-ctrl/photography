@@ -8,7 +8,7 @@ android {
         minSdk 26
         targetSdk 36
         versionCode 100 + (System.getenv('GITHUB_RUN_NUMBER')?.toInteger() ?: 2)
-        versionName '2.1-reference'
+        versionName '3.0-colors'
         testInstrumentationRunner 'com.hhs.photography.OfflineInstrumentation'
     }
     signingConfigs {
@@ -23,6 +23,7 @@ android {
         }
     }
     buildTypes { release { signingConfig signingConfigs.privateRelease } }
+    buildFeatures { buildConfig true }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17

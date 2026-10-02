@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>光影视界 · 私人相册</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10H15v-7H9v7H3z"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 3v17h17M8 16v-5m5 5V6m5 10V9"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16M8 4v6m8 4v6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M20 12H4m6-6-6 6 6 6"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6zM9 12l2 2 4-4"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M3 7h4l2-3h6l2 3h4v13H3z"/><circle cx="12" cy="13" r="4"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></symbol>
+    <symbol id="i-backup" viewBox="0 0 24 24"><path d="M4 5h16v5H4zM5 10v10h14V10M9 14h6"/></symbol>
+    <symbol id="i-restore" viewBox="0 0 24 24"><path d="M3 4v6h6M3 10a9 9 0 1 1 1 9M12 7v6l4 2"/></symbol>
+    <symbol id="i-git" viewBox="0 0 24 24"><circle cx="7" cy="4" r="2"/><circle cx="7" cy="20" r="2"/><circle cx="18" cy="7" r="2"/><path d="M7 6v12M16 7c-5 0-9 3-9 7"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><path d="M5 12v8h14v-8M12 16V3m-4 4 4-4 4 4"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="m15 4 5 5M4 20l5-1L21 7l-4-4L5 15z"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="m10 14 4-4m-6 7-1 1a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m0 10a4 4 0 0 0 6 0l5-5a4 4 0 0 0-6-6l-1 1"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 3h7v7M21 3 11 13M10 5H4v15h15v-6"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+  </svg>
+  <div class="ambient" aria-hidden="true"><div class="glow glow-one"></div><div class="glow glow-two"></div></div>
+  <header class="topbar">
+    <button class="brand" id="brand-home" aria-label="光影视界首页"><img src="brand.svg" alt="" width="32" height="32"><span>光影视界<small>PRIVATE COLLECTION</small></span></button>
+    <button class="icon-button import-button" id="top-import" aria-label="从相册批量导入"><svg><use href="#i-plus"/></svg></button>
+  </header>
+  <main id="pages">
+    <section class="page active" id="page-home" aria-label="首页">
+      <div class="home-intro"><div class="eyebrow"><span class="local-dot"></span> YOUR LIGHT. YOUR COLORS.</div><h1>光影<span class="title-light">视界</span><span class="title-dot">.</span></h1><p>用色彩定义每一帧，<br>用镜头记录每一刻。</p></div>
+      <button id="hero" class="hero-frame" aria-label="打开精选照片"><img id="hero-image" alt=""/><div class="hero-shade"></div><div class="hero-empty"><img src="brand.svg" alt=""/><span>每一帧，都值得珍藏。</span></div><div class="hero-top"><span class="glass-pill">ON YOUR DEVICE</span><svg><use href="#i-arrow"/></svg></div><div class="hero-caption"><small id="hero-index">YOUR FIRST FRAME</small><h2 id="hero-title">从你的相册开始</h2><p id="hero-meta">原图留在相册，美好留在这里。</p></div></button>
+      <div class="home-cta"><button class="button primary" id="home-gallery">进入色彩画廊 <svg><use href="#i-arrow"/></svg></button><button class="button secondary" id="home-import"><svg><use href="#i-plus"/></svg> 导入照片</button></div>
+      <div class="privacy-note"><svg><use href="#i-shield"/></svg><span>引用原图 · 本机独立 · 不自动公开</span></div>
+      <div class="section-heading"><div><span class="eyebrow">YOUR PALETTE</span><h2>你的色彩，独一无二。</h2></div><button id="home-all-colors" class="text-button">全部 <svg><use href="#i-chevron"/></svg></button></div>
+      <div id="home-colors" class="palette-overview"></div>
+      <div class="section-heading"><div><span class="eyebrow">RECENT FRAMES</span><h2>最近的光影</h2></div><span id="home-total" class="muted"></span></div><div id="recent-photos" class="recent-photos"></div>
+    </section>
+    <section class="page" id="page-gallery" aria-label="色彩画廊" hidden>
+      <div class="page-heading"><span class="eyebrow">A SPECTRUM OF MOMENTS</span><h1>色彩画廊<span class="title-dot">.</span></h1><p>用色彩，重新发现每一张作品。</p></div>
+      <label class="search-box"><svg><use href="#i-search"/></svg><input id="gallery-search" type="search" placeholder="搜索标题、日期、地点、设备或标签" aria-label="搜索照片"/><button id="clear-search" aria-label="清空搜索"><svg><use href="#i-close"/></svg></button></label>
+      <div class="filter-row"><label><select id="location-filter" aria-label="按地点筛选"><option value="">全部地点</option></select></label><label><select id="camera-filter" aria-label="按设备筛选"><option value="">全部设备</option></select></label><label><select id="sort-filter" aria-label="照片排序"><option value="newest">最新优先</option><option value="oldest">最早优先</option><option value="title">标题排序</option></select></label></div>
+      <div id="color-filters" class="color-filters" aria-label="色彩筛选"></div><div class="gallery-summary"><span id="gallery-count">正在加载…</span><button id="reset-filters" class="text-button" hidden>重置筛选</button><span class="grid-hint"><svg><use href="#i-grid"/></svg> 光影集</span></div>
+      <div id="gallery-grid" class="gallery-grid"></div><div id="gallery-empty" class="empty-state" hidden><svg><use href="#i-camera"/></svg><h2>留一束光在这里。</h2><p id="gallery-empty-copy">选择手机相册里的照片，开始你的私人光影集。</p><button class="button primary" id="empty-import">从相册导入 <svg><use href="#i-plus"/></svg></button></div>
+    </section>
+    <section class="page" id="page-map" aria-label="拍摄地点" hidden>
+      <div class="page-heading"><span class="eyebrow">WHERE THE LIGHT TAKES YOU</span><h1>光影足迹<span class="title-dot">.</span></h1><p>那些被镜头记住的地方。</p></div>
+      <div class="map-card"><canvas id="map-canvas" aria-label="离线世界地图，照片拍摄位置"></canvas><span class="map-badge glass-pill"><span class="local-dot"></span> 离线足迹</span><div class="map-controls"><button id="map-zoom-in" class="icon-button" aria-label="放大地图">+</button><button id="map-zoom-out" class="icon-button" aria-label="缩小地图">−</button><button id="map-reset" class="icon-button" aria-label="重置地图"><svg><use href="#i-restore"/></svg></button></div></div>
+      <p class="map-note">双指缩放 / 拖动地图，点选光点查看照片。坐标约 1 公里精度；不是街道导航地图。</p><div id="location-photos" class="location-photos"></div><p class="attribution">Natural Earth · Public domain</p>
+    </section>
+    <section class="page" id="page-analytics" aria-label="数据分析" hidden>
+      <div class="page-heading"><span class="eyebrow">THE ART IN YOUR NUMBERS</span><h1>光影数据<span class="title-dot">.</span></h1><p>看见自己的摄影习惯与色彩偏好。</p></div><div id="analytics-summary" class="stats-grid"></div><div id="analytics-charts"></div>
+    </section>
+    <section class="page" id="page-studio" aria-label="私人相册管理" hidden>
+      <div class="page-heading"><span class="eyebrow">YOUR OWN LITTLE WORLD</span><h1>私人空间<span class="title-dot">.</span></h1><p>安心整理，每一帧都只属于你。</p></div>
+      <div class="studio-card"><div class="studio-heading"><img src="brand.svg" alt="光影视界图标"/><div><h2>光影视界</h2><p id="app-version">私人相册 · 本机独立存储</p></div><span class="glass-pill">OFFLINE</span></div><div class="storage-stats"><div><strong id="stored-count">0</strong><span>张作品</span></div><div><strong id="referenced-count">0</strong><span>原图引用</span></div><div><strong id="storage-bytes">0 MB</strong><span>缓存 / 旧副本</span></div></div><p>新导入只引用原图。请保留系统原片；旧版副本与编辑继续保留。</p></div>
+      <div class="action-list">
+        <button id="studio-import" class="action-row"><span class="action-icon violet"><svg><use href="#i-plus"/></svg></span><span><strong>从相册批量导入</strong><small>多选图片，自动识别拍摄信息</small></span><svg><use href="#i-chevron"/></svg></button>
+        <button id="studio-files" class="action-row"><span class="action-icon blue"><svg><use href="#i-link"/></svg></span><span><strong>从文件选择器引用原图</strong><small>相册授权失败时使用，不退回复制模式</small></span><svg><use href="#i-chevron"/></svg></button>
+        <button id="studio-trash" class="action-row"><span class="action-icon rose"><svg><use href="#i-trash"/></svg></span><span><strong>回收站</strong><small id="trash-count">可恢复，不删除系统原片</small></span><svg><use href="#i-chevron"/></svg></button>
+      </div>
+      <div class="section-label">备份与同步</div><div class="action-list">
+        <button id="studio-backup" class="action-row"><span class="action-icon mint"><svg><use href="#i-backup"/></svg></span><span><strong>导出完整备份</strong><small>原图、编辑和回收站，保存为 ZIP</small></span><svg><use href="#i-chevron"/></svg></button>
+        <button id="studio-restore" class="action-row"><span class="action-icon amber"><svg><use href="#i-restore"/></svg></span><span><strong>恢复备份</strong><small>合并导入，不覆盖已有编辑</small></span><svg><use href="#i-chevron"/></svg></button>
+        <button id="studio-git" class="action-row"><span class="action-icon violet"><svg><use href="#i-git"/></svg></span><span><strong>导出 Git 发布包</strong><small>保留同步接口，照片不会自动公开</small></span><svg><use href="#i-chevron"/></svg></button>
+      </div>
+      <div class="action-list final-actions"><button id="studio-website" class="action-row"><span class="action-icon blue"><svg><use href="#i-external"/></svg></span><span><strong>打开公开网站</strong><small>交给系统浏览器，不带私人照片</small></span><svg><use href="#i-chevron"/></svg></button><button id="studio-help" class="action-row"><span class="action-icon mint"><svg><use href="#i-shield"/></svg></span><span><strong>隐私与使用说明</strong><small>关于引用、缓存、授权和备份</small></span><svg><use href="#i-chevron"/></svg></button></div>
+      <div class="studio-footer"><img src="brand.svg" alt=""/><span>用色彩定义每一帧。</span><small>DESIGNED FOR YOUR LIGHT</small></div>
+    </section>
+  </main>
+  <nav class="bottom-nav" aria-label="主要导航"><div id="nav-indicator"></div><button id="nav-home" data-page="home" class="selected"><svg><use href="#i-home"/></svg><span>首页</span></button><button id="nav-gallery" data-page="gallery"><svg><use href="#i-grid"/></svg><span>画廊</span></button><button id="nav-map" data-page="map"><svg><use href="#i-pin"/></svg><span>地点</span></button><button id="nav-analytics" data-page="analytics"><svg><use href="#i-chart"/></svg><span>数据</span></button><button id="nav-studio" data-page="studio"><svg><use href="#i-sliders"/></svg><span>管理</span></button></nav>
+  <div id="viewer" class="viewer" role="dialog" aria-modal="true" aria-label="照片详情" hidden><div class="viewer-header"><button id="viewer-back" class="icon-button" aria-label="关闭照片"><svg><use href="#i-back"/></svg></button><span id="viewer-position"></span><div><button id="viewer-share" class="icon-button" aria-label="分享展示图"><svg><use href="#i-share"/></svg></button><button id="viewer-edit" class="icon-button" aria-label="编辑照片"><svg><use href="#i-edit"/></svg></button></div></div><div id="viewer-scroll" class="viewer-scroll"><div id="viewer-stage" class="viewer-stage"><img id="viewer-image" alt=""/><span class="viewer-loading" hidden></span><button id="viewer-prev" class="viewer-arrow prev" aria-label="上一张照片">‹</button><button id="viewer-next" class="viewer-arrow next" aria-label="下一张照片">›</button><div class="viewer-gesture-hint">左右轻扫切换 · 双击 / 双指缩放</div></div><div class="detail-content"><span id="viewer-date" class="eyebrow"></span><h1 id="viewer-title"></h1><p id="viewer-location" class="detail-location"></p><div class="section-label">这一帧的色彩</div><div id="viewer-palette" class="detail-palette"></div><div id="viewer-metadata" class="metadata-grid"></div><div id="viewer-tags" class="tag-list"></div><div id="source-state" class="source-state"></div><button id="viewer-relink" class="button secondary" hidden><svg><use href="#i-link"/></svg> 重新选择同一原图 / 恢复授权</button><button id="viewer-map" class="button secondary" hidden><svg><use href="#i-pin"/></svg> 在系统地图中查看</button><button id="viewer-trash" class="button danger"><svg><use href="#i-trash"/></svg> 移入回收站</button><p class="detail-private">本机私人照片 · 没有自动发布到网站</p></div></div></div>
+  <div id="sheet-overlay" class="sheet-overlay" hidden><section id="sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title"><div class="sheet-handle"></div><header><div><span id="sheet-eyebrow" class="eyebrow">PRIVATE COLLECTION</span><h2 id="sheet-title"></h2></div><button id="sheet-close" class="icon-button" aria-label="关闭弹窗"><svg><use href="#i-close"/></svg></button></header><div id="sheet-content"></div></section></div>
+  <div id="progress-banner" class="progress-banner" role="status" hidden><span class="progress-orbit"></span><div><strong id="progress-message"></strong><div class="progress-track"><div id="progress-fill"></div></div></div></div>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>
