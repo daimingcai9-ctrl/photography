@@ -267,6 +267,13 @@ public final class OfflineInstrumentation extends Instrumentation {
             PhotoStore.ImportResult gpsReference=store.importReference(ReferenceFixtureProvider.URI,"引用带GPS.jpg","image/jpeg",0);
             check(!store.original(gpsReference.id).exists()&&store.find(gpsReference.id).photo.getJSONObject("location").getString("name").equals("上海"),"Authorized original URI GPS/city fallback failed");
             check(store.refreshLocation(gpsReference.id)&&store.find(gpsReference.id).photo.getString("gpsStatus").equals("available"),"Reference GPS cannot be refreshed");
+            JSONObject oldGps=store.find(gpsReference.id).photo;
+            oldGps.put("location",new JSONObject().put("name","未知").put("lat",0).put("lng",0));oldGps.remove("locationOrigin");oldGps.put("gpsStatus","not-provided");
+            ContentValues oldValues=new ContentValues();oldValues.put("metadata",oldGps.toString());store.getWritableDatabase().update("photos",oldValues,"id=?",new String[]{gpsReference.id});
+            check(store.importReference(ReferenceFixtureProvider.URI,"同一原片.jpg","image/jpeg",0).status.equals("duplicate")&&store.find(gpsReference.id).photo.getJSONObject("location").getString("name").equals("上海"),"Re-selecting an old import did not repair GPS");
+            JSONObject manualGps=new JSONObject(store.find(gpsReference.id).photo.toString());manualGps.getJSONObject("location").put("name","手动地点保留");store.edit(gpsReference.id,manualGps);
+            store.importReference(ReferenceFixtureProvider.URI,"同一原片.jpg","image/jpeg",0);
+            check(store.find(gpsReference.id).photo.getJSONObject("location").getString("name").equals("手动地点保留"),"GPS repair overwrote a manual location");
             store.trash(gpsReference.id);store.erase(gpsReference.id);
             store.trash(added.id); store.erase(added.id); check(store.find(added.id) == null && !store.original(added.id).exists() && file.exists(), "删除触碰系统源片或残留副本");
             String[] permissions=getTargetContext().getPackageManager().getPackageInfo(getTargetContext().getPackageName(),4096).requestedPermissions;

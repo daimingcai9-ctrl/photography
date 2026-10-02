@@ -218,6 +218,14 @@ public final class PhotoStore extends SQLiteOpenHelper {
                 // replacing edits. Legacy private copies are deliberately NOT removed.
                 if (uri != null && existing.referenced()) {
                     ContentValues link = new ContentValues(); link.put("source_uri", uri.toString());
+                    JSONObject location=existing.photo.getJSONObject("location"); String locationName=location.optString("name");
+                    // Repair GPS on re-selection for older imports, without replacing manual edits.
+                    if(!"manual".equals(existing.photo.optString("locationOrigin")) && location.optDouble("lat")==0 && location.optDouble("lng")==0
+                        && (locationName.isEmpty()||locationName.equals("未知")||locationName.startsWith("拍摄地点 ("))) {
+                        LocationRead result=locationRead(uri); existing.photo.put("gpsStatus",result.status);
+                        if(result.location!=null) { resolveCity(result.location); existing.photo.put("location",result.location).put("locationOrigin","exif"); }
+                        link.put("metadata",existing.photo.toString());
+                    }
                     getWritableDatabase().update("photos", link, "id=?", new String[]{id});
                     if (!existing.sourceUri.equals(uri.toString())) releaseUnused(Uri.parse(existing.sourceUri));
                 }
