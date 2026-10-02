@@ -52,7 +52,10 @@ public final class OfflineInstrumentation extends Instrumentation {
         throw new AssertionError("Offline UI condition failed: "+condition+"; "+js(activity,"window.Album&&Album.debug()"));
     }
     private void screenshot(String name) throws Exception {
-        waitForIdleSync();Thread.sleep(650);Bitmap bitmap=getUiAutomation().takeScreenshot();check(bitmap!=null,"No screenshot");
+        waitForIdleSync();Thread.sleep(650);
+        android.view.accessibility.AccessibilityNodeInfo root=getUiAutomation().getRootInActiveWindow();
+        check(root != null && getTargetContext().getPackageName().contentEquals(root.getPackageName()),"External system window obscures album screenshot: " + (root == null ? "none" : root.getPackageName()));
+        root.recycle(); Bitmap bitmap=getUiAutomation().takeScreenshot();check(bitmap!=null,"No screenshot");
         try(OutputStream output=new FileOutputStream(new File(getTargetContext().getFilesDir(),"ui-"+name+".png"))){bitmap.compress(Bitmap.CompressFormat.PNG,100,output);}finally{bitmap.recycle();}
     }
     private void uiTests() throws Exception {
@@ -78,6 +81,7 @@ public final class OfflineInstrumentation extends Instrumentation {
         stage("viewport "+js(activity,"({width:innerWidth,height:innerHeight,density:devicePixelRatio,top:getComputedStyle(document.documentElement).getPropertyValue('--safe-top'),bottom:getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom')})"));
         check("true".equals(js(activity,"innerHeight/innerWidth>2.1&&innerWidth>=390&&innerWidth<=410")),"Emulator did not use the Xiaomi 15 target viewport");
         check("6".equals(js(activity,"Album.debug().photoCount")),"Native snapshot not delivered");screenshot("home");
+        check("true".equals(js(activity,"Album.debug().motion")),"Device tests must exercise WebView animations");
         runOnMainSync(()->{
             for(String blocked:new String[]{"https://example.com/ui/app.js","file:///data/data/private","https://appassets.androidplatform.net/ui/../private","https://appassets.androidplatform.net/media/raw/"+ids.get(0)+".jpg"})check(activity.resource(Uri.parse(blocked),"GET").getStatusCode()==404,"Resource escaped allowlist");
             check(activity.resource(Uri.parse(MainActivity.PAGE),"POST").getStatusCode()==404,"POST resource allowed");
