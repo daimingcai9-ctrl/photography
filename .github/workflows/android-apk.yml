@@ -75,14 +75,7 @@ jobs:
             adb uninstall com.hhs.photography.offline
             adb install android/app/build/outputs/apk/release/app-release.apk
             adb shell am start -W -n com.hhs.photography.offline/com.hhs.photography.MainActivity
-            ready=0
-            for attempt in $(seq 1 15); do
-              adb shell uiautomator dump /sdcard/release-window.xml
-              adb pull /sdcard/release-window.xml release-window.xml
-              if grep -q '光影视界首页' release-window.xml && grep -q '进入色彩画廊' release-window.xml; then ready=1; break; fi
-              sleep 2
-            done
-            test "$ready" = 1
+            ready=0; for attempt in $(seq 1 15); do adb shell uiautomator dump /sdcard/release-window.xml; adb pull /sdcard/release-window.xml release-window.xml; if grep -q '光影视界首页' release-window.xml && grep -q '进入色彩画廊' release-window.xml; then ready=1; break; fi; sleep 2; done; adb logcat -d -s AndroidRuntime chromium AlbumUI >> offline-device-log.txt; test "$ready" = 1
             adb shell screencap -p /sdcard/offline-gallery.png
             adb pull /sdcard/offline-gallery.png offline-gallery.png
       - name: Name installable APK
@@ -96,6 +89,7 @@ jobs:
             offline-test-results.txt
             offline-device-log.txt
             release-window.xml
+            ui-screenshots/
             android/app/build/reports/lint-results-release.html
           if-no-files-found: ignore
           retention-days: 7
