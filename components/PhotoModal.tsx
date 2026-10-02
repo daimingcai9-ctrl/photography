@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { Photo } from "@/lib/photos";
+import { Photo, photoHref } from "@/lib/photos";
 import { COLOR_CATEGORY_COLORS, ColorCategory } from "@/lib/colors";
 import EditPanel from "./EditPanel";
+import { useDialog } from "@/lib/dialog";
 
 interface PhotoModalProps {
   photo: Photo | null;
@@ -26,25 +27,18 @@ export default function PhotoModal({
   const [editing, setEditing] = useState(false);
   const [shareStatus, setShareStatus] = useState("");
   const dialogRef = useRef<HTMLDivElement>(null);
+  useDialog(dialogRef, !!photo && !editing, onClose);
 
   useEffect(() => {
     if (!photo) return;
-    const previousActiveElement = document.activeElement as HTMLElement | null;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    dialogRef.current?.focus();
-
     const handleKeyDown = (event: KeyboardEvent) => {
       if (editing) return;
-      if (event.key === "Escape") onClose();
       if (event.key === "ArrowLeft") onPrevious?.();
       if (event.key === "ArrowRight") onNext?.();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
-      previousActiveElement?.focus();
     };
   }, [editing, onClose, onNext, onPrevious, photo]);
 
@@ -53,7 +47,7 @@ export default function PhotoModal({
   const categoryColor = COLOR_CATEGORY_COLORS[photo.colorCategory as ColorCategory];
 
   const handleShare = async () => {
-    const url = `${window.location.origin}/photo/${photo.id}`;
+    const url = `${window.location.origin}${photoHref(photo)}`;
     try {
       if (navigator.share) {
         await navigator.share({ title: photo.title, text: `${photo.title} · ${photo.location.name}`, url });
@@ -135,7 +129,7 @@ export default function PhotoModal({
               </div>
             )}
 
-            <Link href={`/photo/${photo.id}`} className="inline-flex items-center gap-2 text-sm text-white/60 transition hover:text-white">
+            <Link href={photoHref(photo)} className="inline-flex items-center gap-2 text-sm text-white/60 transition hover:text-white">
               打开独立页面 <span aria-hidden="true">→</span>
             </Link>
             <p className="mt-4 hidden text-xs text-white/25 sm:block">使用 ← → 切换，Esc 关闭</p>

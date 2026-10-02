@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Photo } from "@/lib/photos";
-import { deleteCustomPhoto, resetPhotoEdit, savePhotoEdit } from "@/lib/store";
+import { deletePhoto, savePhotoEdit } from "@/lib/store";
+import { useDialog } from "@/lib/dialog";
 
 // Common camera models
 const CAMERA_OPTIONS = [
@@ -60,6 +61,12 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
   const [lng, setLng] = useState(String(photo.location.lng || 0));
   const [title, setTitle] = useState(photo.title);
   const [camera, setCamera] = useState(photo.camera || "");
+  const [date, setDate] = useState(photo.date);
+  const [tags, setTags] = useState(photo.tags.join(", "));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialog(dialogRef, true, () => { if (!busy) onClose(); });
 
   const handleSelectCity = (city: typeof CITY_SUGGESTIONS[number]) => {
     setLocationName(city.name);
@@ -67,40 +74,47 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
     setLng(String(city.lng));
   };
 
-  const handleSave = () => {
-    savePhotoEdit(photo.id, {
+  const handleSave = async () => {
+    setBusy(true); setError("");
+    try { await savePhotoEdit(photo.id, {
       location: {
         name: locationName,
-        lat: parseFloat(lat) || 0,
-        lng: parseFloat(lng) || 0,
+        lat: parseFloat(lat),
+        lng: parseFloat(lng),
       },
       title,
-      camera: camera || undefined,
+      camera: camera || "未知",
+      date,
+      tags: tags.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
     });
     onChange();
     onClose();
+    } catch (e) { setError(e instanceof Error ? e.message : "保存失败"); }
+    finally { setBusy(false); }
   };
-
-  const isCustomPhoto = photo.id.startsWith("new-") || photo.id.startsWith("upload-");
 
   const handleReset = () => {
-    resetPhotoEdit(photo.id);
-    onChange();
-    onClose();
+    setLocationName(photo.location.name); setLat(String(photo.location.lat)); setLng(String(photo.location.lng));
+    setTitle(photo.title); setCamera(photo.camera); setDate(photo.date); setTags(photo.tags.join(", ")); setError("");
   };
 
-  const handleDelete = () => {
-    if (!confirm("确定要删除这张照片吗？")) return;
-    deleteCustomPhoto(photo.id);
+  const handleDelete = async () => {
+    if (!confirm("确定从公开相册删除这张照片吗？云端上传的图片也会被删除。")) return;
+    setBusy(true); setError("");
+    try { await deletePhoto(photo.id);
     onChange();
     onClose();
+    } catch (e) { setError(e instanceof Error ? e.message : "删除失败"); }
+    finally { setBusy(false); }
   };
 
   return (
-    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4" onClick={() => { if (!busy) onClose(); }}>
       <div className="absolute inset-0 bg-black/80" />
 
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="edit-photo-title"
@@ -109,7 +123,7 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
       >
         <div className="flex items-center justify-between mb-6">
           <h2 id="edit-photo-title" className="text-xl font-bold text-white">编辑照片信息</h2>
-          <button type="button" onClick={onClose} aria-label="关闭编辑面板" className="text-white/40 hover:text-white text-2xl leading-none">&times;</button>
+          <button type="button" disabled={busy} onClick={onClose} aria-label="关闭编辑面板" className="text-white/40 hover:text-white text-2xl leading-none">&times;</button>
         </div>
 
         {/* Preview */}
@@ -119,8 +133,9 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
 
         {/* Title */}
         <div className="mb-4">
-          <label className="text-xs text-white/40 mb-1 block">标题</label>
+          <label htmlFor="edit-photo-name" className="text-xs text-white/40 mb-1 block">标题</label>
           <input
+            id="edit-photo-name"
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -128,10 +143,19 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
           />
         </div>
 
+        <div className="mb-4">
+          <label htmlFor="edit-photo-date" className="mb-1 block text-xs text-white/40">拍摄日期</label>
+          <input id="edit-photo-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm text-white" />
+        </div>
+        <div className="mb-4">
+          <label htmlFor="edit-photo-tags" className="mb-1 block text-xs text-white/40">标签（逗号分隔）</label>
+          <input id="edit-photo-tags" value={tags} onChange={(e) => setTags(e.target.value)} className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm text-white" />
+        </div>
         {/* Camera */}
         <div className="mb-4">
-          <label className="text-xs text-white/40 mb-1 block">拍摄设备</label>
+          <label htmlFor="edit-photo-camera" className="text-xs text-white/40 mb-1 block">拍摄设备</label>
           <input
+            id="edit-photo-camera"
             type="text"
             value={camera}
             onChange={(e) => setCamera(e.target.value)}
@@ -177,8 +201,9 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
 
         {/* Location name */}
         <div className="mb-4">
-          <label className="text-xs text-white/40 mb-1 block">地点名称</label>
+          <label htmlFor="edit-photo-location" className="text-xs text-white/40 mb-1 block">地点名称</label>
           <input
+            id="edit-photo-location"
             type="text"
             value={locationName}
             onChange={(e) => setLocationName(e.target.value)}
@@ -190,8 +215,9 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
         {/* Coordinates */}
         <div className="grid grid-cols-2 gap-3 mb-6">
           <div>
-            <label className="text-xs text-white/40 mb-1 block">纬度 (Lat)</label>
+            <label htmlFor="edit-photo-lat" className="text-xs text-white/40 mb-1 block">纬度 (Lat)</label>
             <input
+              id="edit-photo-lat"
               type="number"
               step="0.01"
               value={lat}
@@ -200,8 +226,9 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
             />
           </div>
           <div>
-            <label className="text-xs text-white/40 mb-1 block">经度 (Lng)</label>
+            <label htmlFor="edit-photo-lng" className="text-xs text-white/40 mb-1 block">经度 (Lng)</label>
             <input
+              id="edit-photo-lng"
               type="number"
               step="0.01"
               value={lng}
@@ -211,26 +238,30 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
           </div>
         </div>
 
+        {error && <p role="alert" className="mb-4 text-sm text-red-300">{error}</p>}
         {/* Action buttons */}
         <div className="flex gap-3">
           <button
             type="button"
-            onClick={handleSave}
+            disabled={busy}
+            onClick={() => void handleSave()}
             className="flex-1 py-2.5 bg-white text-black rounded-full text-sm font-medium hover:bg-white/90 transition-colors"
           >
-            保存
+            {busy ? "正在保存…" : "保存并同步"}
           </button>
           <button
             type="button"
             onClick={handleReset}
+            disabled={busy}
             className="px-4 py-2.5 bg-white/10 text-white/60 rounded-full text-sm hover:bg-white/20 transition-colors"
           >
-            重置
+            撤销输入
           </button>
-          {isCustomPhoto && (
+          {(
             <button
               type="button"
-              onClick={handleDelete}
+              disabled={busy}
+              onClick={() => void handleDelete()}
               className="px-4 py-2.5 bg-red-500/20 text-red-400 rounded-full text-sm hover:bg-red-500/30 transition-colors"
             >
               删除

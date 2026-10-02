@@ -1,0 +1,13 @@
+{
+  "name": "photography",
+  "pages_build_output_dir": "out",
+  "compatibility_date": "2026-10-01",
+  "d1_databases": [{
+    "binding": "PHOTO_DB",
+    "database_name": "photography-photos",
+    "database_id": "aa257b94-dccb-4794-9d3f-c64b389ae4f2"
+  }]
+  // R2 activation is pending. After the account owner enables it and creates
+  // photography-photos, add r2_buckets with binding PHOTO_BUCKET.
+  // ADMIN_PASSWORD and SESSION_SECRET are secrets, never NEXT_PUBLIC variables.
+}

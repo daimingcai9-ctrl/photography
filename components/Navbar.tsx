@@ -9,6 +9,7 @@ const navItems = [
   { href: "/gallery", label: "色彩画廊" },
   { href: "/map", label: "地点" },
   { href: "/analytics", label: "数据" },
+  { href: "/studio", label: "上传" },
 ];
 
 export default function Navbar() {
@@ -22,7 +23,7 @@ export default function Navbar() {
             光影视界
           </Link>
 
-          <div className="flex gap-3 sm:gap-8">
+          <div className="flex gap-2 sm:gap-6">
             {navItems.map((item) => {
               const isActive = pathname === item.href;
               return (

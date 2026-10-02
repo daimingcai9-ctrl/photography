@@ -1,0 +1,28 @@
+import { execFileSync } from "node:child_process";
+import photos from "../data/photos.json";
+
+const origin = "https://photography-hhs.pages.dev";
+const revision = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+async function fetchChecked(route: string, asset = false) {
+  const response = await fetch(`${origin}${route}`, { cache: "no-store", signal: AbortSignal.timeout(30000) });
+  if (response.status !== 200) throw new Error(`${route}: HTTP ${response.status}`);
+  if (asset && !/javascript|text\/css/.test(response.headers.get("Content-Type") || "")) throw new Error(`${route}: 资源类型错误`);
+  console.log(`200 ${route}`);
+  return response;
+}
+async function main() {
+  const marker = await (await fetchChecked(`/build-info.json?revision=${revision}`)).json();
+  if (marker.revision !== revision || marker.features !== "batch-studio-v1") throw new Error("新构建尚未上线");
+  let gallery = "";
+  for (const route of ["/", "/gallery", "/map", "/analytics", `/photo/${photos.photos.find((p) => p.title === "作品-1")!.id}`, "/studio", "/photo"]) {
+    const response = await fetchChecked(route);
+    if (route === "/gallery") gallery = await response.text();
+  }
+  const assets = [...new Set(Array.from(gallery.matchAll(/(?:src|href)="([^"?#]*\/_next\/static\/[^"?#]+\.(?:js|css))[^\"]*"/g), (m) => m[1]))];
+  if (!assets.length) throw new Error("画廊未引用静态 JS/CSS");
+  for (const asset of assets) await fetchChecked(asset, true);
+  const session = await (await fetchChecked("/api/session")).json();
+  const listing = await (await fetchChecked("/api/photos")).json();
+  console.log(JSON.stringify({ revision, builtAt: marker.builtAt, checkedAssets: assets.length, uploadConfigured: session.configured, anonymousAuthenticated: session.authenticated, remotePhotos: listing.photos.length }));
+}
+main().catch((error) => { console.error(error instanceof Error ? error.message : "部署验证失败"); process.exitCode = 1; });

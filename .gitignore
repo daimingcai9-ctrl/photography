@@ -44,3 +44,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local credentials and generated verification/build artifacts
+.dev.vars*
+.wrangler/
+.playwright-cli/
+output/
+android/.gradle/
+android/local.properties
+android/**/build/
+*.apk
+*.jks
+*.keystore

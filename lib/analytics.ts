@@ -8,8 +8,7 @@ export function getPhotosByMonth(photos: Photo[]): { month: string; count: numbe
   const monthMap = new Map<string, number>();
 
   for (const photo of photos) {
-    const date = new Date(photo.date);
-    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const monthKey = photo.date.slice(0, 7);
     monthMap.set(monthKey, (monthMap.get(monthKey) || 0) + 1);
   }
 
@@ -25,8 +24,7 @@ export function getPhotosBySeason(photos: Photo[]): { season: string; count: num
   const seasonMap = new Map<string, number>();
 
   for (const photo of photos) {
-    const date = new Date(photo.date);
-    const month = date.getMonth() + 1;
+    const month = Number(photo.date.slice(5, 7));
     let season: string;
 
     if (month >= 3 && month <= 5) season = "春季";

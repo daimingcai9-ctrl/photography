@@ -1,245 +1,138 @@
 /**
- * Photo Upload Server
- * Accepts photo uploads from the browser, saves originals, generates thumbnails,
- * extracts EXIF/colors, and appends to data/photos.json.
- *
- * Run: npx tsx scripts/upload-server.ts
- * Listens on http://localhost:3001
+ * Local management service only. Never expose this process on a public network.
+ * Browser origins are validated before parsing; all writes require a signed session.
  */
+import * as http from "node:http";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { randomBytes } from "node:crypto";
+import { authenticated, constantEqual, createSession, sessionCookie } from "../lib/server/auth";
+import { MAX_IMAGE_BYTES, MAX_THUMB_BYTES, validateEdit, validatePhoto, validId, type Photo } from "../lib/photo-schema";
+import { deriveImages } from "./image-pipeline";
 
-import * as http from "http";
-import * as fs from "fs";
-import * as path from "path";
-import * as crypto from "crypto";
-import sharp from "sharp";
-import exifr from "exifr";
-import type { Photo } from "../lib/photos";
-
+const ROOT = process.cwd();
+const OUTPUT_FILE = path.join(ROOT, "data/photos.json");
+const REMOVED_FILE = path.join(ROOT, "data/removed-photos.json");
 const PORT = 3001;
-const PHOTOS_DIR = path.join(__dirname, "..", "public", "photos");
-const THUMBS_DIR = path.join(__dirname, "..", "public", "thumbnails");
-const OUTPUT_FILE = path.join(__dirname, "..", "data", "photos.json");
-
-// ============================================================
-// Color helpers (same as extract-colors.ts)
-// ============================================================
-function rgbToHex({ r, g, b }: { r: number; g: number; b: number }): string {
-  return "#" + [r, g, b].map((x) => Math.round(x).toString(16).padStart(2, "0")).join("");
+const PASSWORD = process.env.PHOTO_ADMIN_PASSWORD || randomBytes(18).toString("base64url");
+const SECRET = randomBytes(32).toString("hex");
+const allowedOrigins = new Set(["http://localhost:3000", "http://localhost:3002", "http://127.0.0.1:3000", "http://127.0.0.1:3002"]);
+let processing = false;
+let attempts = 0;
+let resetAt = Date.now() + 600000;
+function readPhotos() { return (JSON.parse(fs.readFileSync(OUTPUT_FILE, "utf8")) as { photos: Photo[] }).photos.map(validatePhoto); }
+function savePhotos(photos: Photo[]) {
+  fs.mkdirSync(path.join(ROOT, "source-photos"), { recursive: true });
+  fs.copyFileSync(OUTPUT_FILE, path.join(ROOT, "source-photos", "metadata-before-management.json"));
+  const temporary = `${OUTPUT_FILE}.tmp`;
+  fs.writeFileSync(temporary, JSON.stringify({ photos }, null, 2) + "\n");
+  fs.renameSync(temporary, OUTPUT_FILE);
 }
-
-function categorizeColor(hex: string): Photo["colorCategory"] {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
-  const l = (max + min) / 2, d = max - min;
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-  let h = 0;
-  if (max !== min) {
-    switch (max) {
-      case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
-      case g: h = ((b - r) / d + 2) / 6; break;
-      case b: h = ((r - g) / d + 4) / 6; break;
-    }
-  }
-  h *= 360;
-  if (s < 0.1) { if (l < 0.2) return "black"; if (l > 0.8) return "white"; return "gray"; }
-  if (h >= 15 && h < 45 && s < 0.5 && l < 0.5) return "brown";
-  if (h >= 345 || h < 15) return "red";
-  if (h >= 15 && h < 45) return "orange";
-  if (h >= 45 && h < 75) return "yellow";
-  if (h >= 75 && h < 165) return "green";
-  if (h >= 165 && h < 195) return "cyan";
-  if (h >= 195 && h < 255) return "blue";
-  if (h >= 255 && h < 285) return "purple";
-  if (h >= 285 && h < 345) return "pink";
-  return "gray";
-}
-
-function extractPalette(buffer: Buffer): string[] {
-  const colorMap = new Map<string, number>();
-  for (let i = 0; i < buffer.length; i += 4) {
-    const r = buffer[i], g = buffer[i + 1], b = buffer[i + 2];
-    const key = `${Math.round(r / 32)},${Math.round(g / 32)},${Math.round(b / 32)}`;
-    colorMap.set(key, (colorMap.get(key) || 0) + 1);
-  }
-  const sorted = [...colorMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
-  return sorted.map(([key]) => {
-    const [r, g, b] = key.split(",").map((n) => parseInt(n) * 32);
-    return rgbToHex({ r, g, b });
+function readBody(req: http.IncomingMessage, limit: number) {
+  return new Promise<Buffer>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let total = 0, failed = false;
+    req.on("data", (chunk: Buffer) => {
+      if (failed) return;
+      total += chunk.length;
+      if (total > limit) { failed = true; chunks.length = 0; reject(new Error("请求超过大小限制")); return; }
+      chunks.push(chunk);
+    });
+    req.on("end", () => { if (!failed) resolve(Buffer.concat(chunks)); });
+    req.on("error", reject);
+    req.on("aborted", () => reject(new Error("上传已取消")));
   });
 }
-
-// ============================================================
-// Process uploaded photo
-// ============================================================
-interface ExifData {
-  DateTimeOriginal?: string | Date;
-  Make?: string;
-  Model?: string;
-  LensModel?: string;
-  ISO?: number;
-  FNumber?: number;
-  ExposureTime?: number;
-}
-
-interface UploadBody {
-  dataUrl?: string;
-  title?: string;
-  date?: string;
-  city?: { name: string; lat: number; lng: number };
-  camera?: string;
-}
-
-async function processUpload(dataUrl: string, meta: {
-  title?: string;
-  date?: string;
-  city?: { name: string; lat: number; lng: number };
-  camera?: string;
-}): Promise<Photo> {
-  // Decode data URL
-  const matches = dataUrl.match(/^data:image\/(jpeg|png|webp);base64,(.+)$/);
-  if (!matches) throw new Error("Invalid data URL");
-  const ext = matches[1] === "jpeg" ? "jpg" : matches[1];
-  const buffer = Buffer.from(matches[2], "base64");
-  if (buffer.byteLength > 25 * 1024 * 1024) throw new Error("Image exceeds 25MB limit");
-  await sharp(buffer).metadata();
-
-  // Generate unique filename
-  const id = crypto.randomUUID().slice(0, 8).toUpperCase();
-  const filename = `upload-${id}.${ext}`;
-  const filePath = path.join(PHOTOS_DIR, filename);
-  const thumbFilename = `upload-${id}.jpg`;
-  const thumbPath = path.join(THUMBS_DIR, thumbFilename);
-
-  // Save original
-  fs.writeFileSync(filePath, buffer);
-  console.log(`  ✓ Original saved: public/photos/${filename}`);
-
-  // Generate thumbnail
-  await sharp(buffer)
-    .resize({ width: 400, withoutEnlargement: true })
-    .jpeg({ quality: 70 })
-    .toFile(thumbPath);
-  console.log(`  ✓ Thumbnail saved: public/thumbnails/${thumbFilename}`);
-
-  // Extract dominant color from thumbnail
-  const raw = await sharp(thumbPath).raw().ensureAlpha().resize(1, 1).toBuffer();
-  const dominantColor = rgbToHex({ r: raw[0], g: raw[1], b: raw[2] });
-
-  // Extract palette
-  const paletteBuf = await sharp(thumbPath).raw().ensureAlpha().resize({ width: 50 }).toBuffer();
-  const palette = extractPalette(paletteBuf);
-
-  // Extract EXIF
-  let exif: ExifData = {};
-  try {
-    exif = await exifr.parse(filePath, {
-      pick: ["DateTimeOriginal", "Make", "Model", "LensModel", "ISO", "FNumber", "ExposureTime",
-             "GPSLatitude", "GPSLongitude", "GPSLatitudeRef", "GPSLongitudeRef"],
-    }) as ExifData;
-  } catch {}
-
-  const cameraStr = meta.camera || (exif?.Model ? `${exif.Make || ""} ${exif.Model}`.trim() : "未知");
-  const lens = exif?.LensModel || "";
-  const iso = exif?.ISO || 0;
-  const aperture = exif?.FNumber ? `f/${exif.FNumber}` : "";
-  const shutter = exif?.ExposureTime
-    ? exif.ExposureTime >= 1 ? `${exif.ExposureTime}s` : `1/${Math.round(1 / exif.ExposureTime)}s`
-    : "";
-  const dateTaken = meta.date || (exif?.DateTimeOriginal
-    ? (typeof exif.DateTimeOriginal === "string" ? exif.DateTimeOriginal : (exif.DateTimeOriginal as Date).toISOString()).slice(0, 10)
-    : new Date().toISOString().slice(0, 10));
-
-  const location = meta.city || { name: "未知", lat: 0, lng: 0 };
-
-  const photo = {
-    id: `upload-${id}`,
-    url: `/photos/${filename}`,
-    thumbnail: `/thumbnails/${thumbFilename}`,
-    title: meta.title || filename,
-    date: dateTaken,
-    location,
-    dominantColor,
-    palette,
-    colorCategory: categorizeColor(dominantColor),
-    camera: cameraStr,
-    lens,
-    iso,
-    aperture,
-    shutter,
-    tags: [categorizeColor(dominantColor)],
-  };
-
-  return photo;
-}
-
-// ============================================================
-// HTTP Server
-// ============================================================
-const server = http.createServer((req, res) => {
-  const allowedOrigins = new Set(["http://localhost:3000", "http://127.0.0.1:3000"]);
+const server = http.createServer(async (req, res) => {
   const origin = req.headers.origin;
-  if (origin && allowedOrigins.has(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
+  const send = (value: unknown, status = 200) => { res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(value)); };
+  if (!origin || !allowedOrigins.has(origin)) { send({ error: "请求来源不允许" }, 403); return; }
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-  if (req.method === "OPTIONS") {
-    res.writeHead(!origin || allowedOrigins.has(origin) ? 204 : 403);
-    res.end();
-    return;
-  }
-
-  if (req.method === "POST" && req.url === "/api/upload") {
-    let body = "";
-    let tooLarge = false;
-    req.on("data", (chunk: Buffer) => {
-      if (tooLarge) return;
-      body += chunk.toString("utf8");
-      if (body.length > 36 * 1024 * 1024) {
-        tooLarge = true;
-        res.writeHead(413, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Request too large" }));
-      }
-    });
-    req.on("end", async () => {
-      if (tooLarge) return;
+  if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
+  const route = req.url?.split("?")[0] || "";
+  const request = new Request(`http://localhost:${PORT}${route}`, { headers: { Cookie: req.headers.cookie || "" } });
+  try {
+    const loggedIn = await authenticated(request, SECRET);
+    if (route === "/api/session" && req.method === "GET") { send({ configured: true, authenticated: loggedIn }); return; }
+    if (route === "/api/photos" && req.method === "GET") { send({ photos: readPhotos(), deletedIds: JSON.parse(fs.readFileSync(REMOVED_FILE, "utf8")), configured: true }); return; }
+    if (route === "/api/login" && req.method === "POST") {
+      if (Date.now() > resetAt) { attempts = 0; resetAt = Date.now() + 600000; }
+      if (++attempts > 10) { send({ error: "请 10 分钟后重试" }, 429); return; }
+      const body = JSON.parse((await readBody(req, 2048)).toString("utf8"));
+      if (typeof body.password !== "string" || body.password.length > 200 || !await constantEqual(body.password, PASSWORD)) { send({ error: "管理密码不正确" }, 401); return; }
+      attempts = 0;
+      res.setHeader("Set-Cookie", sessionCookie(await createSession(SECRET), false));
+      send({ success: true }); return;
+    }
+    if (route === "/api/logout" && req.method === "POST") { res.setHeader("Set-Cookie", sessionCookie("", false, true)); send({ success: true }); return; }
+    if (!loggedIn) { send({ error: "请先登录本地相册管理" }, 401); return; }
+    if (route === "/api/upload" && req.method === "POST") {
+      if (processing) { send({ error: "正在处理另一张照片，请稍后重试" }, 429); return; }
+      processing = true;
       try {
-        const { dataUrl, title, date, city, camera } = JSON.parse(body) as UploadBody;
-        if (!dataUrl) {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Missing dataUrl" }));
-          return;
+        const body = await readBody(req, MAX_IMAGE_BYTES + MAX_THUMB_BYTES + 32768);
+        const form = await new Response(new Uint8Array(body), { headers: { "Content-Type": req.headers["content-type"] || "" } }).formData();
+        const file = form.get("image"), meta = form.get("metadata"), requestId = form.get("requestId");
+        if (!(file instanceof Blob) || !file.size || file.size > MAX_IMAGE_BYTES || typeof meta !== "string" || typeof requestId !== "string" || !/^[a-f0-9-]{36}$/.test(requestId)) throw new Error("上传内容不正确");
+        const id = `upload-${requestId}`;
+        const exists = readPhotos().find((p) => p.id === id);
+        if (exists) { send({ photo: exists }); return; }
+        const processed = await deriveImages(Buffer.from(await file.arrayBuffer()));
+        const filename = `${id}.jpg`;
+        const photo = validatePhoto({ ...JSON.parse(meta), id, url: `/photos/${filename}`, thumbnail: `/thumbnails/${filename}`, source: "static", width: processed.width, height: processed.height, dominantColor: processed.dominantColor, palette: processed.palette, colorCategory: processed.colorCategory });
+        fs.mkdirSync(path.join(ROOT, "public/photos"), { recursive: true });
+        fs.mkdirSync(path.join(ROOT, "public/thumbnails"), { recursive: true });
+        const imagePath = path.join(ROOT, "public/photos", filename), thumbPath = path.join(ROOT, "public/thumbnails", filename);
+        try {
+          fs.writeFileSync(imagePath, processed.image, { flag: "wx" });
+          fs.writeFileSync(thumbPath, processed.thumbnail, { flag: "wx" });
+          savePhotos([...readPhotos(), photo]);
+        } catch (error) {
+          // Generated files belong to this request; keep failed writes out of the public directory.
+          const recovery = path.join(ROOT, "source-photos", "failed-uploads");
+          fs.mkdirSync(recovery, { recursive: true });
+          for (const filePath of [imagePath, thumbPath]) if (fs.existsSync(filePath)) fs.renameSync(filePath, path.join(recovery, path.basename(filePath) + (filePath === thumbPath ? ".thumb" : "")));
+          throw error;
         }
-
-        console.log(`\n📸 Processing upload: ${title || "untitled"}`);
-        const photo = await processUpload(dataUrl, { title, date, city, camera });
-
-        // Read existing photos.json and append
-        const existing = JSON.parse(fs.readFileSync(OUTPUT_FILE, "utf-8")) as { photos: Photo[] };
-        existing.photos.push(photo);
-        fs.writeFileSync(OUTPUT_FILE, JSON.stringify(existing, null, 2));
-        console.log(`  ✓ Added to photos.json (${existing.photos.length} total)`);
-
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ success: true, photo }));
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : "Unknown error";
-        console.error(`  ✗ Error: ${message}`);
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: message }));
+        send({ photo }); return;
+      } finally { processing = false; }
+    }
+    const match = /^\/api\/photos\/([A-Za-z0-9_-]{1,100})$/.exec(route);
+    if (match && validId(match[1])) {
+      const photos = readPhotos(), index = photos.findIndex((p) => p.id === match[1]);
+      if (index < 0) { send({ error: "照片未找到" }, 404); return; }
+      if (req.method === "PATCH") {
+        const edit = validateEdit(JSON.parse((await readBody(req, 8192)).toString("utf8")));
+        photos[index] = validatePhoto({ ...photos[index], ...edit });
+        savePhotos(photos); send({ photo: photos[index] }); return;
       }
-    });
-    return;
+      if (req.method === "DELETE") {
+        const deleted = photos[index];
+        const removed = JSON.parse(fs.readFileSync(REMOVED_FILE, "utf8")) as string[];
+        fs.writeFileSync(REMOVED_FILE, JSON.stringify([...new Set([...removed, deleted.id])]) + "\n");
+        savePhotos(photos.filter((p) => p.id !== deleted.id));
+        const recovery = path.join(ROOT, "source-photos", "removed", `${Date.now()}-${deleted.id}`);
+        fs.mkdirSync(recovery, { recursive: true });
+        for (const url of [deleted.url, deleted.thumbnail]) {
+          if (!/^\/(photos|thumbnails)\/[^/]+$/.test(url)) continue;
+          const src = path.join(ROOT, "public", url);
+          if (fs.existsSync(src)) fs.renameSync(src, path.join(recovery, url.startsWith("/thumbnails/") ? "thumbnail-" + path.basename(url) : path.basename(url)));
+        }
+        send({ success: true }); return;
+      }
+    }
+    send({ error: "接口未找到" }, 404);
+  } catch (error) {
+    send({ error: error instanceof Error ? error.message : "保存失败" }, error instanceof Error && /请求超过/.test(error.message) ? 413 : 400);
   }
-
-  res.writeHead(404);
-  res.end("Not found");
 });
-
+server.requestTimeout = 120000;
+server.headersTimeout = 15000;
 server.listen(PORT, "127.0.0.1", () => {
-  console.log(`\n🚀 Photo upload server running on http://localhost:${PORT}`);
-  console.log(`   POST /api/upload with { dataUrl, title, date, city, camera }`);
-  console.log(`\n   Waiting for uploads...\n`);
+  console.log(`本地管理服务：http://localhost:${PORT}（仅本机）`);
+  console.log(`本地管理密码：${PASSWORD}`);
 });

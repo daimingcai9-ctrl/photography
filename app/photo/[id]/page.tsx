@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getAllPhotos, getPhotoById } from "@/lib/photos";
 import PhotoDetailClient from "./client";
+import { SITE_URL } from "@/lib/config";
 
 export async function generateStaticParams() {
   return getAllPhotos().map((p) => ({ id: p.id }));
@@ -16,8 +17,7 @@ export async function generateMetadata({
   if (!photo) return { title: "照片未找到" };
 
   const description = `${photo.title}，拍摄于${photo.location.name}，${photo.date}`;
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
-  const imageUrl = siteUrl ? new URL(photo.url, siteUrl).toString() : undefined;
+  const imageUrl = new URL(photo.url, SITE_URL).toString();
   return {
     title: photo.title,
     description,

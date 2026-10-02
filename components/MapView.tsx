@@ -25,9 +25,10 @@ export default function MapView({ photos, onPhotoClick }: MapViewProps) {
   const onPhotoClickRef = useRef(onPhotoClick);
   const [selectedLoc, setSelectedLoc] = useState<string | null>(null);
   const [mapReady, setMapReady] = useState(false);
+  const [mapError, setMapError] = useState(false);
 
   const grouped = useMemo(() => {
-    const result: Record<string, Photo[]> = {};
+    const result: Record<string, Photo[]> = Object.create(null);
     for (const photo of photos) {
       const key = photo.location.name || "未知";
       if (!result[key]) result[key] = [];
@@ -64,7 +65,7 @@ export default function MapView({ photos, onPhotoClick }: MapViewProps) {
         if (alive) setMapReady(true);
       });
       mapInst.current = map;
-    });
+    }).catch(() => { if (alive) setMapError(true); });
 
     return () => {
       alive = false;
@@ -157,7 +158,7 @@ export default function MapView({ photos, onPhotoClick }: MapViewProps) {
     <div className="relative h-full w-full">
       <div ref={mapRef} aria-label="照片拍摄地点地图" className="absolute inset-0" style={{ background: "#f5f0e8" }} />
 
-      {!mapReady && <div className="absolute inset-0 z-20 flex items-center justify-center bg-zinc-950/80"><div className="text-sm text-white/40">加载地图...</div></div>}
+      {!mapReady && <div className="absolute inset-0 z-20 flex items-center justify-center bg-zinc-950/80"><div role="status" className="text-sm text-white/40">{mapError ? "地图暂时无法加载，仍可从地点列表查看照片。" : "加载地图..."}</div></div>}
 
       <div className="absolute left-4 top-4 z-[1000] max-h-[60vh] overflow-y-auto rounded-xl bg-black/70 p-3" suppressHydrationWarning>
         <p className="mb-2 text-xs font-medium text-white/40">拍摄地点</p>

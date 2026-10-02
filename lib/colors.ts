@@ -158,11 +158,11 @@ export function categorizeColor(hex: string): ColorCategory {
     const [minH, maxH] = range.h;
     if (minH > maxH) {
       // Wraps around 360
-      if (h >= minH || h <= maxH) {
+      if (h >= minH || h < maxH) {
         return category as ColorCategory;
       }
     } else {
-      if (h >= minH && h <= maxH) {
+      if (h >= minH && h < maxH) {
         return category as ColorCategory;
       }
     }

@@ -3,6 +3,7 @@
 import Hero from "@/components/Hero";
 import { useEditedPhotos } from "@/lib/store";
 import Link from "next/link";
+import { photoHref } from "@/lib/photos";
 
 export default function Home() {
   const [allPhotos] = useEditedPhotos();
@@ -35,7 +36,7 @@ export default function Home() {
               {allPhotos.slice(0, 4).map((photo) => (
                 <Link
                   key={photo.id}
-                  href={`/photo/${photo.id}`}
+                  href={photoHref(photo)}
                   className="relative aspect-square rounded-xl overflow-hidden group cursor-pointer"
                 >
                   <img

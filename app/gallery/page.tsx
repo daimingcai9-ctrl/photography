@@ -2,13 +2,13 @@
 
 import { Suspense, useCallback, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { ColorCategory, COLOR_CATEGORY_COLORS } from "@/lib/colors";
 import { useEditedPhotos } from "@/lib/store";
 import { LOCAL_STUDIO_ENABLED } from "@/lib/config";
 import ColorBar from "@/components/ColorBar";
 import PhotoGrid from "@/components/PhotoGrid";
 import PhotoModal from "@/components/PhotoModal";
-import AddPhotoModal from "@/components/AddPhotoModal";
 import GalleryFilters, { GallerySort } from "@/components/GalleryFilters";
 
 function GalleryContent() {
@@ -16,7 +16,7 @@ function GalleryContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const categoryParam = searchParams.get("color");
-  const selectedCategory = categoryParam && categoryParam in COLOR_CATEGORY_COLORS
+  const selectedCategory = categoryParam && Object.hasOwn(COLOR_CATEGORY_COLORS, categoryParam)
     ? categoryParam as ColorCategory
     : null;
   const query = searchParams.get("q") || "";
@@ -25,7 +25,6 @@ function GalleryContent() {
   const sortParam = searchParams.get("sort");
   const sort: GallerySort = sortParam === "oldest" || sortParam === "title" ? sortParam : "newest";
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
   const [allPhotos, reload] = useEditedPhotos();
 
   const updateFilter = useCallback((key: string, value: string | null) => {
@@ -95,11 +94,7 @@ function GalleryContent() {
             <h1 className="mb-2 text-4xl font-bold">色彩画廊</h1>
             <p className="text-white/60">用色彩重新发现每一张作品 · 共 {allPhotos.length} 张</p>
           </div>
-          {LOCAL_STUDIO_ENABLED && (
-            <button type="button" onClick={() => setShowAddModal(true)} className="ml-4 flex-shrink-0 rounded-full bg-white px-4 py-2 text-sm font-medium text-black transition-colors hover:bg-white/90">
-              + 本地添加
-            </button>
-          )}
+          <Link href="/studio" className="ml-4 flex-shrink-0 rounded-full bg-white px-4 py-2 text-sm font-medium text-black transition-colors hover:bg-white/90">上传照片</Link>
         </div>
 
         <GalleryFilters
@@ -131,9 +126,6 @@ function GalleryContent() {
         onNext={selectedIndex >= 0 && selectedIndex < filteredPhotos.length - 1 ? () => setSelectedPhotoId(filteredPhotos[selectedIndex + 1].id) : undefined}
       />
 
-      {LOCAL_STUDIO_ENABLED && showAddModal && (
-        <AddPhotoModal onClose={() => setShowAddModal(false)} onAdd={reload} />
-      )}
     </div>
   );
 }

@@ -5,11 +5,14 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useEditedPhotos } from "@/lib/store";
 import { COLOR_CATEGORY_COLORS, ColorCategory } from "@/lib/colors";
+import { photoHref } from "@/lib/photos";
+import { usePhotoStore } from "@/lib/store";
 
 export default function PhotoDetailClient({ id }: { id: string }) {
   const router = useRouter();
   const [shareStatus, setShareStatus] = useState("");
   const [photos] = useEditedPhotos();
+  const state = usePhotoStore();
   const photoIndex = photos.findIndex((item) => item.id === id);
   const photo = photoIndex >= 0 ? photos[photoIndex] : undefined;
 
@@ -17,7 +20,7 @@ export default function PhotoDetailClient({ id }: { id: string }) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <p className="text-white/60 mb-4">照片未找到</p>
+          <p className="text-white/60 mb-4">{state.loaded ? "照片未找到或已删除" : "正在同步照片…"}</p>
           <Link href="/gallery" className="text-white/40 hover:text-white text-sm">← 返回画廊</Link>
         </div>
       </div>
@@ -44,7 +47,7 @@ export default function PhotoDetailClient({ id }: { id: string }) {
   return (
     <div className="min-h-screen pb-12 pt-20">
       <div className="mx-auto mb-6 flex max-w-7xl items-center justify-between px-4">
-        <button type="button" onClick={() => router.back()} className="flex items-center gap-2 text-white/60 transition-colors hover:text-white">
+        <button type="button" onClick={() => { if (window.history.length > 1 && document.referrer.startsWith(window.location.origin)) router.back(); else router.push("/gallery"); }} className="flex items-center gap-2 text-white/60 transition-colors hover:text-white">
           <svg aria-hidden="true" className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           返回
         </button>
@@ -61,8 +64,8 @@ export default function PhotoDetailClient({ id }: { id: string }) {
               <img src={photo.url} alt={photo.title} className="h-full w-full object-contain" />
             </div>
             <nav aria-label="照片翻页" className="mt-4 flex justify-between gap-4">
-              {previousPhoto ? <Link href={`/photo/${previousPhoto.id}`} className="max-w-[45%] truncate text-sm text-white/50 transition hover:text-white">← {previousPhoto.title}</Link> : <span />}
-              {nextPhoto && <Link href={`/photo/${nextPhoto.id}`} className="max-w-[45%] truncate text-right text-sm text-white/50 transition hover:text-white">{nextPhoto.title} →</Link>}
+              {previousPhoto ? <Link href={photoHref(previousPhoto)} className="max-w-[45%] truncate text-sm text-white/50 transition hover:text-white">← {previousPhoto.title}</Link> : <span />}
+              {nextPhoto && <Link href={photoHref(nextPhoto)} className="max-w-[45%] truncate text-right text-sm text-white/50 transition hover:text-white">{nextPhoto.title} →</Link>}
             </nav>
           </div>
 
