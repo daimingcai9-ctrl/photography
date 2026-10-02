@@ -12,13 +12,23 @@
   ];
   const colorMap = new Map(colors.map(([id,name,hex]) => [id,{name,hex}]));
   const state = {photos:[],trash:[],bytes:0,page:"home",color:"",query:"",location:"",camera:"",sort:"newest",filtered:[],detail:null,sequence:[],busy:false,ready:false,motion:true,version:0,range:""};
-  let channel,connect,requestNo=0,toastTimer,searchTimer,gridFrame,returnFocus,morphSource,viewerEpoch=0;
+  let channel,connect,requestNo=0,toastTimer,searchTimer,gridFrame,returnFocus,viewerEpoch=0,viewerAnimation,previewJob,previewRunning=false;
+  const pageAnimations=new Map(),gridCards=new Map();
   const pending = new Map();
   const connected = new Promise((resolve) => { connect=resolve; });
   function node(tag,cls,text) { const value=document.createElement(tag); if (cls) value.className=cls; if (text !== undefined) value.textContent=String(text); return value; }
   function icon(name) { const svg=document.createElementNS("http://www.w3.org/2000/svg","svg"),use=document.createElementNS(svg.namespaceURI,"use"); use.setAttribute("href","#i-"+name); svg.append(use); svg.setAttribute("aria-hidden","true"); return svg; }
   function button(label,action,cls="button secondary") { const value=node("button",cls,label); value.type="button"; value.addEventListener("click",action); return value; }
   function image(url,alt,cls="") { const img=node("img",cls); img.alt=alt || ""; img.decoding="async"; img.src=url; img.addEventListener("load",() => img.classList.add("loaded"),{once:true}); return img; }
+  function description(photo) { return photo.date+" · "+photo.location.name; }
+  function decodedImage(url) {
+    return new Promise((resolve,reject) => {
+      const img=new Image(); img.decoding="async";
+      const timer=setTimeout(() => { img.src=""; reject(new Error("图片读取超时")); },15000);
+      img.onload=async () => { clearTimeout(timer); if (img.decode) { try { await img.decode(); } catch { /* Old WebView: onload is sufficient. */ } } resolve(img); };
+      img.onerror=() => { clearTimeout(timer); reject(new Error("图片读取失败")); }; img.src=url;
+    });
+  }
   function hex(value) { return /^#[a-f0-9]{6}$/i.test(value || "") ? value : "#9F7AEA"; }
   function safeMedia(value) { return typeof value === "string" && /^\/media\/(thumb|image|preview)\/[A-Za-z0-9_-]+\.jpg(?:\?t=\d+)?$/.test(value) ? value : ""; }
   function request(action,data={}) {
@@ -39,7 +49,7 @@
     const data=message.data || {};
     if (message.event === "changed") {
       snapshot(data);
-      if (state.detail) { if (state.photos.some((p) => p.id===state.detail)) openPhoto(state.detail,null,state.sequence); else closeViewer(false); }
+      if (state.detail) { const photo=state.photos.find((p) => p.id===state.detail); if (photo) { const status=$("source-state").textContent,warning=$("source-state").classList.contains("warning"); fillDetail(photo); $("source-state").textContent=status; $("source-state").classList.toggle("warning",warning); } else closeViewer(false); }
     }
     if (message.event === "progress") {
       setBusy(!!data.busy); $("progress-banner").hidden=!data.busy;
@@ -67,14 +77,15 @@
   function navigate(page) {
     if (!pages.includes(page) || page === state.page) return;
     if (state.detail) closeViewer(false);
-    const previous=$("page-"+state.page); previous.hidden=true; previous.classList.remove("active","entering");
-    state.page=page; const next=$("page-"+page); next.hidden=false; next.classList.add("active","entering");
+    const previous=$("page-"+state.page); pageAnimations.get(previous)?.cancel(); previous.hidden=true; previous.classList.remove("active","entering");
+    state.page=page; const next=$("page-"+page); pageAnimations.get(next)?.cancel(); next.hidden=false; next.classList.add("active");
+    if (state.motion && next.animate) pageAnimations.set(next,next.animate([{opacity:.92,transform:"translateY(8px)"},{opacity:1,transform:"none"}],{duration:240,easing:"ease-out"}));
     document.querySelectorAll(".bottom-nav button").forEach((item) => { item.classList.toggle("selected",item.dataset.page === page); item.setAttribute("aria-current",item.dataset.page === page ? "page" : "false"); });
     $("nav-indicator").style.transform="translateX("+(pages.indexOf(page)*100)+"%)";
     if (page === "gallery") { state.range=""; requestAnimationFrame(renderGrid); }
     if (page === "map") { renderLocations(); requestAnimationFrame(() => { mapResize(); loadWorld(); }); }
     if (page === "analytics") renderAnalytics();
-    setTimeout(() => next.classList.remove("entering"),400); haptic();
+    haptic();
   }
   function colorSelect(id) { state.color=id; filter(); if (state.page !== "gallery") navigate("gallery"); }
   function pick(files=false,relink="") { if (!state.busy) run("pick",{files,relink}); }
@@ -86,10 +97,10 @@
   function renderHome() {
     const photo=state.photos[0],hero=$("hero"),heroImg=$("hero-image"); hero.classList.toggle("empty",!photo);
     if (photo) {
-      heroImg.src=safeMedia(photo.image); heroImg.alt=photo.title; $("hero-title").textContent=photo.title; $("hero-meta").textContent=photo.location.name+" · "+photo.date;
+      if (heroImg.getAttribute("src") !== safeMedia(photo.image)) heroImg.src=safeMedia(photo.image); heroImg.alt=description(photo); $("hero-title").hidden=true; $("hero-meta").textContent=description(photo);
       $("hero-index").textContent="FRAME 01 / "+String(state.photos.length).padStart(2,"0"); hero.onclick=() => openPhoto(photo.id,heroImg,state.photos.map((p) => p.id));
     } else {
-      heroImg.removeAttribute("src"); $("hero-title").textContent="从你的相册开始"; $("hero-meta").textContent="原图留在相册，美好留在这里。"; $("hero-index").textContent="YOUR FIRST FRAME"; hero.onclick=() => pick();
+      heroImg.removeAttribute("src"); $("hero-title").hidden=false; $("hero-title").textContent="从你的相册开始"; $("hero-meta").textContent="原图留在相册，美好留在这里。"; $("hero-index").textContent="YOUR FIRST FRAME"; hero.onclick=() => pick();
     }
     const counts=countBy(state.photos,(p) => p.colorCategory),overview=$("home-colors"); overview.replaceChildren();
     const available=colors.filter(([id]) => counts[id]);
@@ -97,7 +108,7 @@
       const chip=node("button","color-summary"),dot=node("span","dot"),label=node("span",null,name),number=node("small",null,counts[id] || "—"); dot.style.background=c; chip.append(dot,label,number); chip.addEventListener("click",() => colorSelect(id)); overview.append(chip);
     });
     const recent=$("recent-photos"); recent.replaceChildren();
-    state.photos.slice(0,5).forEach((p) => { const tile=node("button","recent-card"),img=image(safeMedia(p.thumb),p.title); tile.append(img,node("span",null,p.title)); tile.onclick=() => openPhoto(p.id,img,state.photos.map((photo) => photo.id)); recent.append(tile); });
+    state.photos.slice(0,5).forEach((p) => { const tile=node("button","recent-card"),img=image(safeMedia(p.thumb),description(p)); tile.append(img,node("span",null,p.date)); tile.onclick=() => openPhoto(p.id,img,state.photos.map((photo) => photo.id)); recent.append(tile); });
     if (!state.photos.length) recent.append(node("div","recent-empty","没有预装的示例照片。你的光影，由你选择。"));
     $("home-total").textContent=state.photos.length+" 张作品";
   }
@@ -123,8 +134,8 @@
   function filter() {
     const query=state.query.trim().toLocaleLowerCase("zh-CN");
     state.filtered=state.photos.filter((p) => (!state.color || state.color === p.colorCategory) && (!state.location || state.location === p.location.name) && (!state.camera || state.camera === p.camera)
-      && (!query || [p.title,p.date,p.camera,p.lens,p.location.name,...(p.tags || [])].join(" ").toLocaleLowerCase("zh-CN").includes(query)));
-    state.filtered.sort((a,b) => state.sort === "title" ? a.title.localeCompare(b.title,"zh-CN") : state.sort === "oldest" ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date));
+      && (!query || [p.date,p.camera,p.lens,p.location.name,...(p.tags || [])].join(" ").toLocaleLowerCase("zh-CN").includes(query)));
+    state.filtered.sort((a,b) => state.sort === "oldest" ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date));
     $("gallery-count").textContent=state.filtered.length+" / "+state.photos.length+" 张作品";
     $("reset-filters").hidden=!(state.color || state.query || state.location || state.camera || state.sort !== "newest");
     const container=$("color-filters"); container.replaceChildren();
@@ -137,10 +148,10 @@
     $("empty-import").hidden=state.photos.length > 0; if (state.page === "gallery") requestAnimationFrame(renderGrid);
   }
   function photoCard(p,index,rowHeight,animate) {
-    const card=node("button","photo-card"+(animate ? " card-arrive" : "")); card.style.height=(rowHeight-13)+"px"; card.dataset.photo=p.id; card.setAttribute("aria-label","查看照片："+p.title+"，"+p.location.name);
+    const card=node("button","photo-card"); card.style.height=(rowHeight-13)+"px"; card.dataset.photo=p.id; card.setAttribute("aria-label","查看照片："+description(p));
     if (animate) card.style.animationDelay=(Math.min(index,7)*35)+"ms";
-    const picture=node("div","photo-image"),img=image(safeMedia(p.thumb),p.title),dot=node("span","photo-color-dot"); picture.style.height=(rowHeight-69)+"px"; dot.style.background=hex(p.dominantColor); picture.append(img,dot);
-    const caption=node("div","photo-caption"),meta=node("div"),label=node("span","color-label",colorMap.get(p.colorCategory)?.name || "色彩"); label.style.color=colorMap.get(p.colorCategory)?.hex || "#9F7AEA"; meta.append(node("span",null,p.date),label); caption.append(node("strong",null,p.title),meta); card.append(picture,caption);
+    const picture=node("div","photo-image"),img=image(safeMedia(p.thumb),description(p)),dot=node("span","photo-color-dot"); picture.style.height=(rowHeight-69)+"px"; dot.style.background=hex(p.dominantColor); picture.append(img,dot);
+    const caption=node("div","photo-caption"),meta=node("div"),label=node("span","color-label",colorMap.get(p.colorCategory)?.name || "色彩"); label.style.color=colorMap.get(p.colorCategory)?.hex || "#9F7AEA"; meta.append(node("span",null,p.date),label); caption.append(node("strong",null,p.location.name),meta); card.append(picture,caption);
     card.onclick=() => openPhoto(p.id,img,state.filtered.map((photo) => photo.id)); return card;
   }
   function renderGrid() {
@@ -148,33 +159,65 @@
     const columns=window.innerWidth >= 600 ? 3 : 2,width=(grid.clientWidth-12*(columns-1))/columns,rowHeight=Math.ceil((width-2)*1.25+69);
     const top=Math.max(0,page.scrollTop-grid.offsetTop),totalRows=Math.ceil(state.filtered.length/columns),startRow=Math.min(Math.max(0,totalRows-1),Math.max(0,Math.floor(top/rowHeight)-2)),endRow=Math.min(totalRows,Math.max(startRow+1,Math.ceil((top+page.clientHeight)/rowHeight)+2));
     const range=state.version+":"+startRow+":"+endRow+":"+rowHeight; if (range === state.range) return;
-    const animate=!state.range; state.range=range; const fragment=document.createDocumentFragment();
-    if (startRow>0) { const spacer=node("div","grid-spacer"); spacer.style.height=(startRow*rowHeight-13)+"px"; fragment.append(spacer); }
-    for (let index=startRow*columns;index<Math.min(state.filtered.length,endRow*columns);index++) fragment.append(photoCard(state.filtered[index],index-startRow*columns,rowHeight,animate));
-    if (endRow<totalRows) { const spacer=node("div","grid-spacer"); spacer.style.height=((totalRows-endRow)*rowHeight-13)+"px"; fragment.append(spacer); }
-    grid.replaceChildren(fragment);
+    state.range=range; const wanted=[],ids=new Set();
+    if (startRow>0) { const spacer=node("div","grid-spacer"); spacer.style.height=(startRow*rowHeight-13)+"px"; wanted.push(spacer); }
+    for (let index=startRow*columns;index<Math.min(state.filtered.length,endRow*columns);index++) {
+      const p=state.filtered[index],key=JSON.stringify([p.thumb,p.date,p.location,p.dominantColor,p.colorCategory,rowHeight]); ids.add(p.id);
+      let entry=gridCards.get(p.id); if (!entry || entry.key !== key) { entry={key,card:photoCard(p,index,rowHeight,false)}; gridCards.set(p.id,entry); } wanted.push(entry.card);
+    }
+    if (endRow<totalRows) { const spacer=node("div","grid-spacer"); spacer.style.height=((totalRows-endRow)*rowHeight-13)+"px"; wanted.push(spacer); }
+    // Keep overlapping image nodes attached and decoded; retain only the visible buffer.
+    const keep=new Set(wanted); for (const child of [...grid.children]) if (!keep.has(child)) child.remove();
+    let cursor=grid.firstChild; for (const child of wanted) { if (child === cursor) cursor=cursor.nextSibling; else grid.insertBefore(child,cursor); }
+    for (const id of gridCards.keys()) if (!ids.has(id)) gridCards.delete(id);
   }
   $("page-gallery").addEventListener("scroll",() => { if (!gridFrame) gridFrame=requestAnimationFrame(renderGrid); },{passive:true});
-  new ResizeObserver(() => { state.range=""; if (state.page === "gallery") renderGrid(); }).observe($("gallery-grid"));
+  let gridWidth=0;
+  new ResizeObserver(([entry]) => { if (entry.contentRect.width === gridWidth) return; gridWidth=entry.contentRect.width; state.range=""; if (state.page === "gallery") renderGrid(); }).observe($("gallery-grid"));
 
   function openPhoto(id,source,sequence) {
     const photo=state.photos.find((p) => p.id === id); if (!photo) return;
-    if (!state.detail) returnFocus=document.activeElement; state.detail=id; state.sequence=sequence || state.photos.map((p) => p.id); haptic();
-    const viewer=$("viewer"),img=$("viewer-image"); viewer.hidden=false; viewer.classList.add("opening"); $("pages").setAttribute("aria-hidden","true"); document.querySelector(".bottom-nav").setAttribute("aria-hidden","true");
-    $("viewer-stage").style.touchAction="none"; resetZoom(); $("viewer-scroll").scrollTop=0; img.src=safeMedia(photo.image); img.alt=photo.title; fillDetail(photo);
-    if (source && source.isConnected) { morphSource=source; morph(source,img,true); } else morphSource=null;
-    const epoch=++viewerEpoch; document.querySelector(".viewer-loading").hidden=false;
-    request("preview",{id}).then((preview) => {
-      if (epoch !== viewerEpoch || state.detail !== id) return;
-      const next=safeMedia(preview.url); if (next) img.src=next; $("source-state").classList.toggle("warning",!preview.available);
-      $("source-state").textContent=preview.available ? photo.referenced ? "正在显示系统原图。原片仍在手机相册，应用仅保留展示缓存和图片信息。" : "正在显示旧版 / 备份恢复的应用原片副本。升级没有自动删除它。" : preview.warning;
-    }).catch((error) => { if (epoch === viewerEpoch) { $("source-state").textContent=error.message+" 当前显示已保存的展示缓存。"; $("source-state").classList.add("warning"); } })
-      .finally(() => { if (epoch === viewerEpoch) document.querySelector(".viewer-loading").hidden=true; });
-    $("viewer-back").focus({preventScroll:true}); setTimeout(() => viewer.classList.remove("opening"),350);
+    const opening=!state.detail; if (opening) returnFocus=document.activeElement;
+    state.detail=id; state.sequence=sequence || state.photos.map((p) => p.id); haptic();
+    const viewer=$("viewer"),epoch=++viewerEpoch; viewerAnimation?.cancel(); viewer.hidden=false; viewer.classList.remove("opening");
+    if (opening && state.motion && viewer.animate) viewerAnimation=viewer.animate([{opacity:.92,transform:"translateY(12px)"},{opacity:1,transform:"none"}],{duration:240,easing:"ease-out"});
+    $("pages").setAttribute("aria-hidden","true"); document.querySelector(".bottom-nav").setAttribute("aria-hidden","true");
+    $("viewer-stage").style.touchAction="none"; resetZoom(); $("viewer-scroll").scrollTop=0; fillDetail(photo);
+    const job={id,photo,epoch};
+    // Hold the previous decoded frame until the new one is ready. Never clear src mid-swipe.
+    document.querySelector(".viewer-loading").hidden=false; previewJob=job; pumpPreview();
+    if (opening) $("viewer-back").focus({preventScroll:true});
+  }
+  function showFrame(img,photo,epoch) {
+    if (epoch !== viewerEpoch || state.detail !== photo.id) return;
+    img.id="viewer-image"; img.alt=description(photo); img.dataset.photo=photo.id; $("viewer-image").replaceWith(img);
+    if (state.motion && img.animate) img.animate([{opacity:.94,transform:"translateX(5px)"},{opacity:1,transform:"none"}],{duration:180,easing:"ease-out"});
+  }
+  async function pumpPreview() {
+    if (previewRunning) return; previewRunning=true;
+    try {
+      while (previewJob) {
+        const job=previewJob; previewJob=null;
+        try {
+          // Coalesce rapid swipes: at most one cache/original decode job, not one per tap.
+          try { const cached=await decodedImage(safeMedia(job.photo.image)); if (job.epoch === viewerEpoch) showFrame(cached,job.photo,job.epoch); } catch { /* Native original may still be available. */ }
+          if (job.epoch !== viewerEpoch) continue;
+          const preview=await request("preview",{id:job.id});
+          if (job.epoch !== viewerEpoch) continue;
+          const next=safeMedia(preview.url); if (!next) throw new Error("原图预览地址无效");
+          // Native keeps one preview buffer: finish loading it before requesting the next.
+          const img=await decodedImage(next); if (job.epoch !== viewerEpoch) continue;
+          showFrame(img,job.photo,job.epoch); $("source-state").classList.toggle("warning",!preview.available);
+          $("source-state").textContent=preview.available ? job.photo.referenced ? "正在显示系统原图。原片仍在手机相册，应用仅保留展示缓存和图片信息。" : "正在显示旧版 / 备份恢复的应用原片副本。升级没有自动删除它。" : preview.warning;
+        } catch (error) { if (job.epoch === viewerEpoch) { $("source-state").textContent=error.message+" 当前显示已保存的展示缓存。"; $("source-state").classList.add("warning"); } }
+        finally { if (job.epoch === viewerEpoch) document.querySelector(".viewer-loading").hidden=true; }
+      }
+    } finally { previewRunning=false; if (!state.detail) run("closePreview"); }
   }
   function fillDetail(photo) {
     const index=state.sequence.indexOf(photo.id); $("viewer-position").textContent=String(index+1).padStart(2,"0")+" / "+String(state.sequence.length).padStart(2,"0");
-    $("viewer-title").textContent=photo.title; $("viewer-date").textContent=photo.date.replace(/-/g," . "); $("viewer-location").textContent=photo.location.name;
+    $("viewer-title").textContent=""; $("viewer-title").hidden=true; $("viewer-date").textContent=photo.date.replace(/-/g," . "); $("viewer-location").textContent=photo.location.name;
+    $("location-state").textContent=photo.location.lat || photo.location.lng ? "已读取拍摄坐标 · 约 1 公里精度，离线地图可查看；不在线查询详细地址。" : "未获得照片 GPS：可能未记录，或选择器隐藏了位置。可授权重新读取，也可从文件选择器选原片；不会使用手机当前位置冒充拍摄地点。";
     const palette=$("viewer-palette"); palette.replaceChildren(); (photo.palette || []).forEach((c) => { const swatch=node("div","detail-swatch"); swatch.style.background=hex(c); swatch.setAttribute("aria-label","色彩 "+hex(c)); palette.append(swatch); });
     const metadata=$("viewer-metadata"); metadata.replaceChildren(); [["拍摄设备",photo.camera],["镜头",photo.lens || "未知"],["感光度",photo.iso ? "ISO "+photo.iso : "未知"],["光圈",photo.aperture || "未知"],["快门",photo.shutter || "未知"],["展示尺寸",photo.width+" × "+photo.height]].forEach(([label,value]) => { const cell=node("div","metadata-cell"); cell.append(node("small",null,label),node("strong",null,value)); metadata.append(cell); });
     const tags=$("viewer-tags"); tags.replaceChildren(); (photo.tags || []).forEach((tag) => tags.append(node("span",null,tag)));
@@ -182,24 +225,12 @@
     $("viewer-relink").hidden=!photo.referenced; $("viewer-map").hidden=!(photo.location.lat || photo.location.lng);
     $("source-state").classList.remove("warning"); $("source-state").textContent="正在读取原图…";
   }
-  function morph(source,target,opening) {
-    if (!state.motion || !source || !target || !source.animate) return;
-    const from=source.getBoundingClientRect(); if (!from.width || !from.height) return;
-    requestAnimationFrame(() => {
-      const to=target.getBoundingClientRect(); if (!to.width || !to.height) return;
-      const overlay=image(source.currentSrc || source.src,"","morph-image"); overlay.style.borderRadius=opening ? "18px" : "0px";
-      Object.assign(overlay.style,{left:from.left+"px",top:from.top+"px",width:from.width+"px",height:from.height+"px"}); document.body.append(overlay); target.style.opacity="0";
-      const animation=overlay.animate([{left:from.left+"px",top:from.top+"px",width:from.width+"px",height:from.height+"px",borderRadius:opening ? "18px" : "0px",opacity:1},{left:to.left+"px",top:to.top+"px",width:to.width+"px",height:to.height+"px",borderRadius:opening ? "0px" : "18px",opacity:1}],{duration:320,easing:"cubic-bezier(.2,.75,.25,1)",fill:"forwards"});
-      animation.onfinish=() => { target.style.opacity=""; overlay.remove(); }; setTimeout(() => { target.style.opacity=""; overlay.remove(); },380);
-    });
-  }
   function closeViewer(animate=true) {
-    if (!state.detail) return; viewerEpoch++; const viewer=$("viewer"),img=$("viewer-image");
+    if (!state.detail) return; const epoch=++viewerEpoch,viewer=$("viewer"); viewerAnimation?.cancel(); previewJob=null;
     state.detail=null; $("pages").removeAttribute("aria-hidden"); document.querySelector(".bottom-nav").removeAttribute("aria-hidden");
-    if (animate && state.motion && viewer.animate) viewer.animate([{opacity:1},{opacity:0,transform:"translateY(20px)"}],{duration:220,easing:"ease-out"}).onfinish=() => { if (!state.detail) { viewer.hidden=true; img.removeAttribute("src"); } };
-    else { viewer.hidden=true; img.removeAttribute("src"); }
-    if (morphSource && morphSource.isConnected && animate) morph(img,morphSource,false);
-    setTimeout(() => { if (!state.detail) { run("closePreview"); img.removeAttribute("src"); } },400);
+    const finish=() => { if (epoch === viewerEpoch && !state.detail) { viewer.hidden=true; $("viewer-image").removeAttribute("src"); if (!previewRunning) run("closePreview"); } };
+    if (animate && state.motion && viewer.animate) { viewerAnimation=viewer.animate([{opacity:1},{opacity:0,transform:"translateY(12px)"}],{duration:180,easing:"ease-out"}); viewerAnimation.onfinish=finish; }
+    else finish();
     if (returnFocus?.isConnected) returnFocus.focus({preventScroll:true}); resetZoom();
   }
   function adjacent(direction) { const index=state.sequence.indexOf(state.detail)+direction,id=state.sequence[index]; if (!id) return; const sequence=state.sequence; openPhoto(id,null,sequence); }
@@ -207,6 +238,7 @@
   $("viewer-share").onclick=() => { if (state.detail) confirmSheet("分享展示图","将分享去除 EXIF 的展示图片，而非含 GPS 的原片。选择分享对象后，图片会交给对方应用；不会自动发布到网站。","选择分享对象",() => run("share",{id:state.detail})); };
   $("viewer-map").onclick=() => { if (state.detail) confirmSheet("打开系统地图","这会把该照片约 1 公里精度的坐标交给你手机的地图应用。不会发送照片。","继续",() => run("map",{id:state.detail})); };
   $("viewer-relink").onclick=() => { if (state.detail) pick(false,state.detail); };
+  $("viewer-gps").onclick=() => { const id=state.detail; if (id) confirmSheet("重新读取拍摄位置","仅读取原片 EXIF 中的拍摄坐标，可能需要照片位置信息授权；不会获取你的实时位置或联网查询地址。成功时替换本片地点，失败则保留已有编辑。","读取原片位置",() => run("location",{id})); };
   $("viewer-trash").onclick=() => { const id=state.detail; if (id) confirmSheet("移入回收站？","仅移入应用回收站，可以恢复；不会删除或修改手机系统相册中的原片。","移入回收站",async () => { const data=await run("trash",{id}); if (data) { closeViewer(false); snapshot(data); toast("已移入回收站，系统原片未改动。"); } },true); };
   const pointers=new Map(); let zoom=1,panX=0,panY=0,startZoom=1,startDistance=0,gestureStart=null,lastTap=0;
   function resetZoom() { zoom=1;panX=0;panY=0;pointers.clear(); $("viewer-image").style.transform=""; }
@@ -242,7 +274,7 @@
   }
   $("viewer-edit").onclick=() => {
     const photo=state.photos.find((p) => p.id===state.detail); if (!photo) return; const form=node("form"),inputs={};
-    [["title","标题",photo.title],["date","拍摄日期 YYYY-MM-DD",photo.date],["location","地点名称",photo.location.name],["camera","拍摄设备",photo.camera],["tags","标签（逗号分隔，最多 20 个）",(photo.tags || []).join(", ")]].forEach(([key,label,value]) => {
+    [["date","拍摄日期 YYYY-MM-DD",photo.date],["location","地点名称",photo.location.name],["camera","拍摄设备",photo.camera],["tags","标签（逗号分隔，最多 20 个）",(photo.tags || []).join(", ")]].forEach(([key,label,value]) => {
       const field=node("label","edit-field"),input=node("input"); input.value=value; input.name=key; input.maxLength=key==="tags" ? 900 : key==="date" ? 10 : 200; input.required=key==="title" || key==="date"; if (key==="date") input.inputMode="numeric";
       field.append(node("span",null,label),input); form.append(field); inputs[key]=input;
     });
@@ -253,7 +285,7 @@
     form.addEventListener("submit",async (event) => {
       event.preventDefault(); const edit=JSON.parse(JSON.stringify(photo)),lat=Number(inputs.lat.value),lng=Number(inputs.lng.value);
       if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat)>90 || Math.abs(lng)>180) { error.textContent="请输入有效的经纬度。"; return; }
-      edit.title=inputs.title.value.trim(); edit.date=inputs.date.value; edit.camera=inputs.camera.value; edit.tags=inputs.tags.value.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean); edit.location={name:inputs.location.value,lat,lng};
+      edit.date=inputs.date.value; edit.camera=inputs.camera.value; edit.tags=inputs.tags.value.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean); edit.location={name:inputs.location.value,lat,lng};
       save.disabled=true; try { const data=await request("edit",{id:photo.id,photo:edit}); closeSheet(); snapshot(data); const current=state.photos.find((p) => p.id===photo.id); if (current && state.detail) { const status=$("source-state").textContent,warning=$("source-state").classList.contains("warning"); fillDetail(current); $("source-state").textContent=status; $("source-state").classList.toggle("warning",warning); } toast("已保存到手机，原片未改动。"); }
       catch (failure) { error.textContent=failure.message; } finally { save.disabled=false; }
     }); openSheet("编辑这一帧",form,"EDIT YOUR FRAME");
@@ -262,9 +294,9 @@
     const content=node("div"); content.append(node("p","sheet-copy","应用回收站只管理记录和缓存。恢复不会覆盖编辑；永久删除不会删除系统相册原片。"));
     if (!state.trash.length) content.append(node("p","chart-empty","回收站是空的。"));
     state.trash.slice(0,100).forEach((photo) => {
-      const row=node("div","trash-photo"),text=node("div"),actions=node("div","trash-actions"); text.append(node("strong",null,photo.title),node("small",null,photo.date));
+      const row=node("div","trash-photo"),text=node("div"),actions=node("div","trash-actions"); text.append(node("strong",null,photo.location.name),node("small",null,photo.date));
       actions.append(button("恢复",async () => { const data=await run("restore",{id:photo.id}); if (data) { snapshot(data); closeSheet(); showTrash(); toast("照片已恢复。"); } },""),button("删除",() => confirmSheet("永久删除应用记录？","这会移除应用内的记录、缓存 / 旧版副本并释放引用授权。不能撤销，但不会删除系统原片。","确认永久删除",async () => { const data=await run("erase",{id:photo.id}); if (data) { snapshot(data); showTrash(); toast("应用记录已删除，系统原片未改动。"); } },true),""));
-      row.append(image(safeMedia(photo.thumb),photo.title),text,actions); content.append(row);
+      row.append(image(safeMedia(photo.thumb),description(photo)),text,actions); content.append(row);
     }); if (state.trash.length>100) content.append(node("p","sheet-copy","先显示 100 张，处理后可以查看下一批。")); openSheet("回收站 · "+state.trash.length+" 张",content,"A SECOND CHANCE");
   }
   $("studio-trash").onclick=showTrash;
@@ -322,7 +354,7 @@
     const groups=new Map(); state.photos.forEach((photo) => { const name=photo.location.name; if (!groups.has(name)) groups.set(name,[]);groups.get(name).push(photo); });
     const list=$("location-photos"); list.replaceChildren(); [...groups.entries()].slice(0,20).forEach(([name,photos]) => {
       const card=node("div","location-card"),heading=node("div","location-heading"),title=node("h2",null,name),strip=node("div","location-strip"); title.prepend(icon("pin")); heading.append(title,node("small",null,photos.length+" 张作品"));
-      photos.slice(0,6).forEach((photo) => { const tile=node("button"),img=image(safeMedia(photo.thumb),photo.title); tile.append(img); tile.setAttribute("aria-label","查看 "+photo.title); tile.onclick=() => openPhoto(photo.id,img,photos.map((p) => p.id)); strip.append(tile); }); card.append(heading,strip); list.append(card);
+      photos.slice(0,6).forEach((photo) => { const tile=node("button"),img=image(safeMedia(photo.thumb),description(photo)); tile.append(img); tile.setAttribute("aria-label","查看 "+description(photo)); tile.onclick=() => openPhoto(photo.id,img,photos.map((p) => p.id)); strip.append(tile); }); card.append(heading,strip); list.append(card);
     });
     if (!groups.size) list.append(node("div","recent-empty","还没有拍摄足迹。有 GPS 的照片会自动显示，缺失信息可以在详情里补录。"));
     if (groups.size>20) list.append(node("p","map-note","先显示前 20 个地点，其余作品可在画廊按地点筛选。")); scheduleMap();
@@ -336,7 +368,7 @@
   mapCanvas.addEventListener("pointerup",(event) => { if (mapPointers.size===1 && mapStart && Math.hypot(event.clientX-mapStart.x,event.clientY-mapStart.y)<8) {
     const rect=mapCanvas.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top,hit=mapHits.find((p) => Math.hypot(p.x-x,p.y-y)<18);
     if (hit) { if (hit.photos.length===1) openPhoto(hit.photos[0].id,null,state.photos.map((p) => p.id)); else {
-      const content=node("div"),strip=node("div","location-strip");content.append(node("p","sheet-copy",hit.photos.length+" 张照片拍摄于这个光点附近。"));hit.photos.slice(0,30).forEach((photo) => {const tile=node("button"),img=image(safeMedia(photo.thumb),photo.title);tile.append(img);tile.setAttribute("aria-label",photo.title);tile.onclick=() => {closeSheet();openPhoto(photo.id,null,hit.photos.map((p) => p.id));};strip.append(tile);});content.append(strip);openSheet("这一片光影",content,"LIGHT ON THE MAP");
+      const content=node("div"),strip=node("div","location-strip");content.append(node("p","sheet-copy",hit.photos.length+" 张照片拍摄于这个光点附近。"));hit.photos.slice(0,30).forEach((photo) => {const tile=node("button"),img=image(safeMedia(photo.thumb),description(photo));tile.append(img);tile.setAttribute("aria-label",description(photo));tile.onclick=() => {closeSheet();openPhoto(photo.id,null,hit.photos.map((p) => p.id));};strip.append(tile);});content.append(strip);openSheet("这一片光影",content,"LIGHT ON THE MAP");
     }} }mapPointers.delete(event.pointerId); if (!mapPointers.size) mapStart=null; });
   mapCanvas.addEventListener("pointercancel",() => {mapPointers.clear();mapStart=null;});
   $("map-zoom-in").onclick=() => {mapScale=Math.min(9,mapScale*1.4);scheduleMap();};$("map-zoom-out").onclick=() => {mapScale=Math.max(1,mapScale/1.4);scheduleMap();};$("map-reset").onclick=() => {mapScale=1.3;mapLon=60;mapLat=15;scheduleMap();};

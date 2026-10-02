@@ -13,6 +13,8 @@ import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Matrix;
 import android.media.ExifInterface;
+import android.os.Build;
+import android.provider.MediaStore;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.*;
@@ -29,6 +31,7 @@ public final class PhotoStore extends SQLiteOpenHelper {
     public static final long MAX_FILE = 25L * 1024 * 1024;
     private final File root;
     private final ContentResolver resolver;
+    private final Context context;
     public static final class Record {
         public final String id, name, mime, sourceUri;
         public final JSONObject photo;
@@ -52,6 +55,7 @@ public final class PhotoStore extends SQLiteOpenHelper {
     PhotoStore(Context context, String library, boolean cleanup) throws IOException {
         super(context, "offline-" + library + ".db", null, 2);
         resolver = context.getContentResolver();
+        this.context = context.getApplicationContext();
         root = new File(context.getNoBackupFilesDir(), "album-" + library);
         if (!root.isDirectory() && !root.mkdirs()) throw new IOException("无法创建手机相册存储");
         getWritableDatabase();
@@ -130,6 +134,34 @@ public final class PhotoStore extends SQLiteOpenHelper {
         ExifInterface exif = readExif(source);
         return decode(source, maximum, exif == null ? 1 : exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, 1));
     }
+    private ExifInterface locationExif(Uri uri) {
+        // Read GPS separately: never swap/hash a different URI or mutate the original reference.
+        if (Build.VERSION.SDK_INT >= 29 && context.checkSelfPermission(android.Manifest.permission.ACCESS_MEDIA_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            try {
+                Uri media = "media".equals(uri.getAuthority()) ? uri : MediaStore.getMediaUri(context, uri);
+                // Photo picker URIs don't support requireOriginal on older systems.
+                if (media != null && media.getPath() != null && !media.getPath().contains("/picker")) {
+                    try (InputStream input = resolver.openInputStream(MediaStore.setRequireOriginal(media))) {
+                        if (input != null) return new ExifInterface(input);
+                    }
+                }
+            } catch (IOException | SecurityException | IllegalArgumentException | UnsupportedOperationException ignored) { /* Provider may only expose selected/redacted data. */ }
+        }
+        return readExif(() -> openUri(uri));
+    }
+    private static JSONObject gpsLocation(ExifInterface exif) throws Exception {
+        float[] gps = new float[2];
+        if (exif == null || !exif.getLatLong(gps) || !Float.isFinite(gps[0]) || !Float.isFinite(gps[1]) || Math.abs(gps[0]) > 90 || Math.abs(gps[1]) > 180) return null;
+        double lat = Math.round(gps[0] * 100.0) / 100.0, lng = Math.round(gps[1] * 100.0) / 100.0;
+        return new JSONObject().put("lat",lat).put("lng",lng).put("name","拍摄地点 (" + lat + ", " + lng + ")");
+    }
+    public boolean refreshLocation(String id) throws Exception {
+        Record row = find(id); if (row == null || row.deleted) throw new IOException("照片不存在");
+        JSONObject loc = gpsLocation(row.referenced() ? locationExif(Uri.parse(row.sourceUri)) : readExif(() -> openOriginal(row)));
+        if (loc == null) return false; // Missing or redacted EXIF must not erase manually edited locations.
+        row.photo.put("location",loc); ContentValues values = new ContentValues(); values.put("metadata",row.photo.toString());
+        getWritableDatabase().update("photos",values,"id=?",new String[]{id}); return true;
+    }
     private ImportResult importPhoto(InputStream input, String name, String mime, long modified, String expected, JSONObject backup, Uri uri) throws Exception {
         File raw = new File(root, UUID.randomUUID() + ".part");
         File display = new File(root, UUID.randomUUID() + ".part"), thumbnail = new File(root, UUID.randomUUID() + ".part");
@@ -168,6 +200,7 @@ public final class PhotoStore extends SQLiteOpenHelper {
             int orientation = exif == null ? 1 : exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, 1);
             bitmap = decode(source, 2560, orientation);
             JSONObject photo = metadata(id, name, modified, exif, bitmap.getWidth(), bitmap.getHeight());
+            if (uri != null) { JSONObject gps = gpsLocation(locationExif(uri)); if (gps != null) photo.put("location",gps); }
             small = scale(bitmap, 400);
             JSONArray palette = palette(small); photo.put("palette", palette); photo.put("dominantColor", palette.getString(0));
             photo.put("colorCategory", category(Color.parseColor(palette.getString(0))));
@@ -244,15 +277,12 @@ public final class PhotoStore extends SQLiteOpenHelper {
         if (!validDate(date)) date = new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(new Date(modified > 0 ? modified : System.currentTimeMillis()));
         String camera = (attribute(exif, ExifInterface.TAG_MAKE) + " " + attribute(exif, ExifInterface.TAG_MODEL)).trim();
         JSONObject location = new JSONObject().put("name", "未知").put("lat", 0).put("lng", 0);
-        float[] gps = new float[2];
-        if (exif != null && exif.getLatLong(gps)) {
-            double lat = Math.round(gps[0] * 100.0) / 100.0, lng = Math.round(gps[1] * 100.0) / 100.0;
-            location.put("lat", lat).put("lng", lng).put("name", "拍摄地点 (" + lat + ", " + lng + ")");
-        }
+        JSONObject gps = gpsLocation(exif); if (gps != null) location = gps;
         double aperture = exif == null ? 0 : exif.getAttributeDouble(ExifInterface.TAG_F_NUMBER, 0);
         double exposure = exif == null ? 0 : exif.getAttributeDouble(ExifInterface.TAG_EXPOSURE_TIME, 0);
         int iso = exif == null ? 0 : Math.max(0, exif.getAttributeInt(ExifInterface.TAG_ISO_SPEED_RATINGS, 0));
-        return new JSONObject().put("id", id).put("title", trim(name, 200).isEmpty() ? "未命名照片" : trim(name, 200))
+        // Keep the website export schema, without turning a numeric filename into a display title.
+        return new JSONObject().put("id", id).put("title", "照片")
             .put("url", "/photos/" + id + ".jpg").put("thumbnail", "/thumbnails/" + id + ".jpg").put("source", "static")
             .put("date", date).put("camera", camera.isEmpty() ? "未知" : trim(camera, 200)).put("lens", attribute(exif, "LensModel"))
             .put("iso", Math.min(iso, 10000000)).put("aperture", aperture > 0 ? "f/" + aperture : "")

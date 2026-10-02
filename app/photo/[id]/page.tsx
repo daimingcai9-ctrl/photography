@@ -16,16 +16,16 @@ export async function generateMetadata({
   const photo = getPhotoById(id);
   if (!photo) return { title: "照片未找到" };
 
-  const description = `${photo.title}，拍摄于${photo.location.name}，${photo.date}`;
+  const description = `${photo.date}，拍摄于${photo.location.name}，${photo.date}`;
   const imageUrl = new URL(photo.url, SITE_URL).toString();
   return {
-    title: photo.title,
+    title: photo.date,
     description,
     openGraph: {
       type: "article",
-      title: photo.title,
+      title: photo.date,
       description,
-      images: imageUrl ? [{ url: imageUrl, alt: photo.title }] : undefined,
+      images: imageUrl ? [{ url: imageUrl, alt: photo.date }] : undefined,
     },
   };
 }

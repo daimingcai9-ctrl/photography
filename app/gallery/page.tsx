@@ -23,7 +23,7 @@ function GalleryContent() {
   const selectedLocation = searchParams.get("location") || "";
   const selectedCamera = searchParams.get("camera") || "";
   const sortParam = searchParams.get("sort");
-  const sort: GallerySort = sortParam === "oldest" || sortParam === "title" ? sortParam : "newest";
+  const sort: GallerySort = sortParam === "oldest" ? sortParam : "newest";
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const [allPhotos, reload] = useEditedPhotos();
 
@@ -43,7 +43,7 @@ function GalleryContent() {
       if (selectedCamera && photo.camera !== selectedCamera) return false;
       if (!normalizedQuery) return true;
       const searchable = [
-        photo.title,
+        photo.date,
         photo.location.name,
         photo.camera,
         photo.lens,
@@ -54,7 +54,6 @@ function GalleryContent() {
 
     return result.sort((a, b) => {
       if (sort === "oldest") return a.date.localeCompare(b.date);
-      if (sort === "title") return a.title.localeCompare(b.title, "zh-CN");
       return b.date.localeCompare(a.date);
     });
   }, [allPhotos, query, selectedCamera, selectedCategory, selectedLocation, sort]);

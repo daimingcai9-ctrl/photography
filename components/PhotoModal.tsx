@@ -50,7 +50,7 @@ export default function PhotoModal({
     const url = `${window.location.origin}${photoHref(photo)}`;
     try {
       if (navigator.share) {
-        await navigator.share({ title: photo.title, text: `${photo.title} · ${photo.location.name}`, url });
+        await navigator.share({ title: photo.date, text: `${photo.date} · ${photo.location.name}`, url });
         setShareStatus("已分享");
       } else {
         await navigator.clipboard.writeText(url);
@@ -92,7 +92,7 @@ export default function PhotoModal({
 
         <div className="flex flex-col md:flex-row">
           <div className="relative aspect-[4/3] flex-shrink-0 md:aspect-auto md:min-h-[640px] md:w-2/3">
-            <img src={photo.url} alt={photo.title} className="h-full w-full rounded-t-2xl object-contain bg-black md:rounded-l-2xl md:rounded-tr-none" />
+            <img src={photo.url} alt={photo.date} className="h-full w-full rounded-t-2xl object-contain bg-black md:rounded-l-2xl md:rounded-tr-none" />
             {onPrevious && (
               <button type="button" onClick={onPrevious} aria-label="上一张照片" className="absolute left-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-2xl text-white transition hover:bg-black/80">‹</button>
             )}
@@ -102,7 +102,7 @@ export default function PhotoModal({
           </div>
 
           <div className="p-6 md:w-1/3 md:pt-20">
-            <h2 id="photo-modal-title" className="mb-2 text-2xl font-bold text-white">{photo.title}</h2>
+            <h2 id="photo-modal-title" className="sr-only">{photo.date}</h2>
             <p className="mb-6 text-sm text-white/50">{photo.location.name} · {photo.date}</p>
 
             <div className="mb-6">

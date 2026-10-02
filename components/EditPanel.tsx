@@ -128,19 +128,7 @@ export default function EditPanel({ photo, onClose, onChange }: EditPanelProps) 
 
         {/* Preview */}
         <div className="aspect-video rounded-xl overflow-hidden mb-4">
-          <img src={photo.thumbnail} alt={photo.title} className="w-full h-full object-cover" />
-        </div>
-
-        {/* Title */}
-        <div className="mb-4">
-          <label htmlFor="edit-photo-name" className="text-xs text-white/40 mb-1 block">标题</label>
-          <input
-            id="edit-photo-name"
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="w-full bg-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:ring-1 focus:ring-white/30"
-          />
+          <img src={photo.thumbnail} alt={`${photo.date} · ${photo.location.name}`} className="w-full h-full object-cover" />
         </div>
 
         <div className="mb-4">

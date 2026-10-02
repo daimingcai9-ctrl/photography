@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class MainActivity extends Activity {
     static final String ORIGIN = "https://appassets.androidplatform.net";
     static final String PAGE = ORIGIN + "/ui/index.html";
-    private static final int PICK = 100, BACKUP = 101, GIT = 102, RESTORE = 103, FILES = 104;
+    private static final int PICK = 100, BACKUP = 101, GIT = 102, RESTORE = 103, FILES = 104, MEDIA_LOCATION = 105;
     private final ThreadPoolExecutor worker = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
         new ArrayBlockingQueue<>(32), new ThreadPoolExecutor.AbortPolicy());
     private final AtomicInteger pending = new AtomicInteger();
@@ -40,6 +40,7 @@ public final class MainActivity extends Activity {
     private WebMessagePort port;
     private volatile boolean trusted, busy;
     private String relinkId;
+    private Runnable afterLocationPermission;
     private int insetTop, insetBottom, insetLeft, insetRight;
     private float keyboard;
     private volatile String previewId = "";
@@ -155,7 +156,7 @@ public final class MainActivity extends Activity {
         if (busy && !action.equals("bootstrap") && !action.equals("list") && !action.equals("haptic")) throw new IOException("正在处理照片，请等待完成");
         JSONObject result=new JSONObject();
         switch (action) {
-            case "bootstrap": return snapshot().put("motion",ValueAnimator.areAnimatorsEnabled()).put("version","3.0 · 私人相册");
+            case "bootstrap": return snapshot().put("motion",ValueAnimator.areAnimatorsEnabled()).put("version","3.1 · 私人相册");
             case "list": return snapshot();
             case "preview": {
                 PhotoStore.Record row=require(data.getString("id"),false); Bitmap bitmap=null;
@@ -175,7 +176,13 @@ public final class MainActivity extends Activity {
             case "erase": require(data.getString("id"),true); store.erase(data.getString("id")); return snapshot();
             case "pick": {
                 String relink=data.optString("relink"); if (!relink.isEmpty()) require(relink,false); boolean files=data.optBoolean("files");
-                ui(() -> { relinkId=relink; pick(files ? FILES : PICK); }); return result;
+                ui(() -> { if (afterLocationPermission != null) return; relinkId=relink;
+                    boolean asked=getPreferences(MODE_PRIVATE).getBoolean("locationAsked",false);
+                    withLocationPermission(() -> pick(files ? FILES : PICK),!asked); }); return result;
+            }
+            case "location": {
+                String id=data.getString("id"); require(id,false);
+                ui(() -> withLocationPermission(() -> refreshLocation(id),true)); return result;
             }
             case "backup": ui(() -> export(BACKUP)); return result;
             case "git": ui(() -> export(GIT)); return result;
@@ -226,6 +233,9 @@ public final class MainActivity extends Activity {
         intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,photos && (relinkId == null || relinkId.isEmpty()));
         if (request == PICK && Build.VERSION.SDK_INT >= 33) {
             Intent album=new Intent(MediaStore.ACTION_PICK_IMAGES).setType("image/*");
+            // Official extra (37.1): updated pickers can ask for GPS per selection.
+            // Older pickers ignore it; SAF + media-location permission is the fallback.
+            album.putExtra("android.provider.extra.REQUEST_LOCATION_METADATA_ACCESS",true);
             if (relinkId == null || relinkId.isEmpty()) album.putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX,Math.min(100,MediaStore.getPickImagesMaxLimit()));
             // Start directly: package visibility can make resolveActivity report
             // false even though the system photo picker can be launched.
@@ -233,6 +243,29 @@ public final class MainActivity extends Activity {
             catch (android.content.ActivityNotFoundException unavailable) { /* Document picker fallback below. */ }
         }
         try { startActivityForResult(intent,request); } catch (Exception error) { notice("无法打开选择器","请使用手机系统文件或相册提供者。"); }
+    }
+    private void withLocationPermission(Runnable action,boolean ask) {
+        if (afterLocationPermission != null || busy) return;
+        if (!ask || Build.VERSION.SDK_INT < 29 || checkSelfPermission(android.Manifest.permission.ACCESS_MEDIA_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) { action.run(); return; }
+        afterLocationPermission=action;
+        new AlertDialog.Builder(this).setTitle("读取照片拍摄位置")
+            .setMessage("仅申请读取你选中照片的 EXIF 位置信息，不读取手机实时位置。拒绝也能导入照片；旧版相册选择器可能仍隐藏 GPS，可改用管理 → 从文件选择器导入原片。")
+            .setNegativeButton("跳过",(d,w) -> finishLocationPermission())
+            .setPositiveButton("授权读取",(d,w) -> { getPreferences(MODE_PRIVATE).edit().putBoolean("locationAsked",true).apply(); requestPermissions(new String[]{android.Manifest.permission.ACCESS_MEDIA_LOCATION},MEDIA_LOCATION); })
+            .setOnCancelListener(d -> finishLocationPermission()).show();
+    }
+    private void finishLocationPermission() { Runnable action=afterLocationPermission; afterLocationPermission=null; getPreferences(MODE_PRIVATE).edit().putBoolean("locationAsked",true).apply(); if (action != null && !isFinishing()) action.run(); }
+    @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] grants) {
+        super.onRequestPermissionsResult(request,permissions,grants); if (request == MEDIA_LOCATION) finishLocationPermission();
+    }
+    private void refreshLocation(String id) {
+        if (busy) return; progress(true,"正在读取原片拍摄位置…",0,0);
+        worker.execute(() -> {
+            String outcome;
+            try { outcome=store.refreshLocation(id) ? "已更新拍摄坐标；未联网查询地址。" : "未获得 GPS，已有地点未改动。请从文件选择器选原片，并检查小米相机是否开启保存位置信息；旧选择器可能隐藏 GPS。"; }
+            catch (Exception error) { outcome="读取位置失败：" + message(error) + "；已有地点未改动。"; }
+            progress(false,outcome,0,0); changed();
+        });
     }
     private void export(int request) {
         if (busy) return;

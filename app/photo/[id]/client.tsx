@@ -35,7 +35,7 @@ export default function PhotoDetailClient({ id }: { id: string }) {
     const url = window.location.href;
     try {
       const canShare = typeof navigator.share === "function";
-      if (canShare) await navigator.share({ title: photo.title, url });
+      if (canShare) await navigator.share({ title: photo.date, url });
       else await navigator.clipboard.writeText(url);
       setShareStatus(canShare ? "已分享" : "链接已复制");
     } catch (error) {
@@ -61,16 +61,16 @@ export default function PhotoDetailClient({ id }: { id: string }) {
         <div className="flex flex-col gap-8 lg:flex-row">
           <div className="lg:w-2/3">
             <div className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-zinc-950">
-              <img src={photo.url} alt={photo.title} className="h-full w-full object-contain" />
+              <img src={photo.url} alt={photo.date} className="h-full w-full object-contain" />
             </div>
             <nav aria-label="照片翻页" className="mt-4 flex justify-between gap-4">
-              {previousPhoto ? <Link href={photoHref(previousPhoto)} className="max-w-[45%] truncate text-sm text-white/50 transition hover:text-white">← {previousPhoto.title}</Link> : <span />}
-              {nextPhoto && <Link href={photoHref(nextPhoto)} className="max-w-[45%] truncate text-right text-sm text-white/50 transition hover:text-white">{nextPhoto.title} →</Link>}
+              {previousPhoto ? <Link href={photoHref(previousPhoto)} className="max-w-[45%] truncate text-sm text-white/50 transition hover:text-white">← {previousPhoto.date}</Link> : <span />}
+              {nextPhoto && <Link href={photoHref(nextPhoto)} className="max-w-[45%] truncate text-right text-sm text-white/50 transition hover:text-white">{nextPhoto.date} →</Link>}
             </nav>
           </div>
 
           <div className="lg:w-1/3">
-            <h1 className="mb-2 text-3xl font-bold">{photo.title}</h1>
+            <h1 className="sr-only">{photo.date}</h1>
             <p className="mb-6 text-white/60">{photo.location.name} · {photo.date}</p>
 
             <div className="mb-8">

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Offline app: no internet or broad media/storage permission. -->
+    <!-- Photo EXIF location only; no live device location, internet or broad storage permission. -->
+    <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
     <application android:label="光影视界" android:icon="@mipmap/ic_launcher"
         android:theme="@style/AppTheme" android:allowBackup="false" android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules" android:hardwareAccelerated="true"

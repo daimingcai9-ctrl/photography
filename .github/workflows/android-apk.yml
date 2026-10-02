@@ -57,7 +57,7 @@ jobs:
           api-level: ${{ matrix.android-api }}
           arch: x86_64
           profile: pixel_6
-          disable-animations: true
+          disable-animations: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -memory 1536 -camera-back none -camera-front none
           script: |
             adb shell wm size 1200x2670

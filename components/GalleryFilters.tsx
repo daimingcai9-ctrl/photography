@@ -1,6 +1,6 @@
 "use client";
 
-export type GallerySort = "newest" | "oldest" | "title";
+export type GallerySort = "newest" | "oldest";
 
 interface GalleryFiltersProps {
   query: string;
@@ -47,7 +47,7 @@ export default function GalleryFilters({
             type="search"
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="搜索标题、地点或标签"
+            placeholder="搜索日期、地点或标签"
             className={`${fieldClass} w-full pl-9`}
           />
         </label>
@@ -73,7 +73,6 @@ export default function GalleryFilters({
           <select value={sort} onChange={(event) => onSortChange(event.target.value as GallerySort)} className={`${fieldClass} w-full`}>
             <option value="newest">最新拍摄</option>
             <option value="oldest">最早拍摄</option>
-            <option value="title">标题排序</option>
           </select>
         </label>
 

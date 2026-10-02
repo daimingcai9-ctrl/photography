@@ -66,6 +66,7 @@ public final class OfflineInstrumentation extends Instrumentation {
                 String id=main.importReference(uri,"测试作品"+i+".jpg","image/jpeg",0).id;ids.add(id);
                 JSONObject edit=new JSONObject(main.find(id).photo.toString()),source=fixtures.getJSONObject(i);
                 for(String key:new String[]{"title","date","location","camera","tags"})edit.put(key,source.get(key));main.edit(id,edit);
+                check(!main.refreshLocation(id) && main.find(id).photo.getJSONObject("location").toString().equals(edit.getJSONObject("location").toString()),"Missing GPS erased edited location");
                 check(!main.original(id).exists(),"UI fixture copied source original");
             }
             boolean wrong=false;
@@ -87,9 +88,13 @@ public final class OfflineInstrumentation extends Instrumentation {
         js(activity,"document.querySelector('.photo-card').click()");waitJs(activity,"!!Album.debug().detail&&document.querySelector('.viewer-loading').hidden");
         waitJs(activity,"document.getElementById('source-state').textContent.includes('系统原图')&&document.getElementById('viewer-image').complete&&document.getElementById('viewer-image').naturalWidth>0");screenshot("detail");
         js(activity,"document.getElementById('viewer-edit').click()");waitJs(activity,"!document.getElementById('sheet-overlay').hidden&&!!document.querySelector('#sheet-content input')");
-        js(activity,"(()=>{document.querySelector('#sheet-content input').value='精美界面编辑测试';document.querySelector('#sheet-content form').requestSubmit();return true})()");
-        waitJs(activity,"document.getElementById('sheet-overlay').hidden&&document.getElementById('viewer-title').textContent==='精美界面编辑测试'");
+        check("true".equals(js(activity,"!document.querySelector('#sheet-content input[name=title]')&&document.getElementById('viewer-title').hidden")),"Filename controls remain visible");
+        js(activity,"(()=>{document.querySelector('#sheet-content input[name=location]').value='位置编辑测试';document.querySelector('#sheet-content form').requestSubmit();return true})()");
+        waitJs(activity,"document.getElementById('sheet-overlay').hidden&&document.getElementById('viewer-location').textContent==='位置编辑测试'");
         check("true".equals(js(activity,"document.getElementById('source-state').textContent.includes('系统原图')")),"Edit lost source status");
+        js(activity,"(()=>{const seq=Album.debug();document.getElementById('viewer-next').click();document.getElementById('viewer-prev').click();Album.closeViewer();document.querySelector('.photo-card').click();return true})()");
+        waitJs(activity,"!!Album.debug().detail&&document.querySelector('.viewer-loading').hidden&&document.getElementById('viewer-image').dataset.photo===Album.debug().detail&&document.getElementById('viewer-image').naturalWidth>0");
+        waitJs(activity,"!document.getElementById('viewer').hidden&&getComputedStyle(document.getElementById('viewer')).opacity==='1'&&!document.querySelector('.morph-image')");
         js(activity,"(Album.back(),Album.navigate('map'))");waitJs(activity,"Album.debug().page==='map'&&document.getElementById('map-canvas').width>0");screenshot("map");
         js(activity,"Album.navigate('analytics')");waitJs(activity,"document.querySelectorAll('.stat-card').length===4");screenshot("analytics");
         js(activity,"Album.navigate('studio')");screenshot("studio");
@@ -119,11 +124,15 @@ public final class OfflineInstrumentation extends Instrumentation {
             ExifInterface exif = new ExifInterface(file.getPath());
             exif.setAttribute(ExifInterface.TAG_ORIENTATION, "6"); exif.setAttribute(ExifInterface.TAG_DATETIME_ORIGINAL, "2025:01:02 00:03:00");
             exif.setAttribute(ExifInterface.TAG_MAKE, "Offline"); exif.setAttribute(ExifInterface.TAG_MODEL, "Test Camera"); exif.saveAttributes();
+            exif.setAttribute(ExifInterface.TAG_GPS_LATITUDE,"31/1,13/1,48/1");exif.setAttribute(ExifInterface.TAG_GPS_LATITUDE_REF,"N");
+            exif.setAttribute(ExifInterface.TAG_GPS_LONGITUDE,"121/1,28/1,12/1");exif.setAttribute(ExifInterface.TAG_GPS_LONGITUDE_REF,"E");exif.saveAttributes();
             PhotoStore.ImportResult added; try (InputStream input = new FileInputStream(file)) { added = store.importPhoto(input, "原片.jpg", "image/jpeg", 0); }
             PhotoStore.Record row = store.find(added.id);
             check(row.photo.getInt("width") == 80 && row.photo.getInt("height") == 120, "自动方向不正确");
             check(row.photo.getString("date").equals("2025-01-02"), "EXIF 日期不正确");
             check(row.photo.getString("camera").equals("Offline Test Camera"), "EXIF 设备未读取");
+            check(Math.abs(row.photo.getJSONObject("location").getDouble("lat")-31.23)<.001 && Math.abs(row.photo.getJSONObject("location").getDouble("lng")-121.47)<.001,"EXIF GPS not parsed/rounded");
+            check(store.refreshLocation(added.id),"Existing photo cannot re-read EXIF GPS");
             check(row.photo.getString("colorCategory").equals("red"), "色彩分类不正确");
             check(new ExifInterface(store.image(added.id).getPath()).getAttribute(ExifInterface.TAG_MAKE) == null, "展示图未移除 EXIF");
             check(new ExifInterface(store.original(added.id).getPath()).getAttribute(ExifInterface.TAG_MAKE).equals("Offline"), "原片未保留");
@@ -199,7 +208,8 @@ public final class OfflineInstrumentation extends Instrumentation {
             try (InputStream source = getTargetContext().getContentResolver().openInputStream(ReferenceFixtureProvider.URI)) { check(source != null && source.read() != -1, "删除应用记录触碰了系统原片"); }
             getTargetContext().getContentResolver().releasePersistableUriPermission(ReferenceFixtureProvider.URI, Intent.FLAG_GRANT_READ_URI_PERMISSION);
             store.trash(added.id); store.erase(added.id); check(store.find(added.id) == null && !store.original(added.id).exists() && file.exists(), "删除触碰系统源片或残留副本");
-            check(getTargetContext().getPackageManager().getPackageInfo(getTargetContext().getPackageName(), 4096).requestedPermissions == null, "离线应用不应申请网络/整盘权限");
+            String[] permissions=getTargetContext().getPackageManager().getPackageInfo(getTargetContext().getPackageName(),4096).requestedPermissions;
+            check(permissions != null && permissions.length == 1 && permissions[0].equals(android.Manifest.permission.ACCESS_MEDIA_LOCATION),"Only photo EXIF permission is allowed; no network/live location/broad storage");
             uiTests();
             file.delete(); result.putString("stream", "OFFLINE_TESTS_OK: URI grants, no original copy, reference persistence, revocation, relinking, missing source, portable backup, safe deletion, v1 migration, EXIF, rotation, deduplication, trash, Git export, zip safety, native launch\n");
             finish(Activity.RESULT_OK, result);

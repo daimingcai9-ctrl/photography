@@ -128,11 +128,11 @@ export default function MapView({ photos, onPhotoClick }: MapViewProps) {
         locationPhotos.forEach((photo) => {
           const button = document.createElement("button");
           button.type = "button";
-          button.setAttribute("aria-label", `查看照片：${photo.title}`);
+          button.setAttribute("aria-label", `查看照片：${photo.date}`);
           button.style.cssText = "flex-shrink:0;text-align:center;cursor:pointer;background:none;border:0;padding:0";
-          button.appendChild(makeImage(photo.thumbnail, photo.title, "width:58px;height:46px;object-fit:cover;border-radius:6px;display:block"));
+          button.appendChild(makeImage(photo.thumbnail, photo.date, "width:58px;height:46px;object-fit:cover;border-radius:6px;display:block"));
           const label = document.createElement("span");
-          label.textContent = photo.title;
+          label.textContent = photo.date;
           label.style.cssText = "color:rgba(255,255,255,.5);font-size:9px;display:block;max-width:58px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px";
           button.appendChild(label);
           button.addEventListener("click", () => onPhotoClickRef.current(photo));
@@ -189,8 +189,8 @@ export default function MapView({ photos, onPhotoClick }: MapViewProps) {
           <div className="flex gap-3 overflow-x-auto pb-2" onWheel={(event) => { event.currentTarget.scrollLeft += event.deltaY; }}>
             {grouped[selectedLoc].map((photo) => (
               <button type="button" key={photo.id} className="group w-24 flex-shrink-0 cursor-pointer" onClick={() => onPhotoClickRef.current(photo)}>
-                <span className="mb-1 block h-20 w-24 overflow-hidden rounded-xl"><img src={photo.thumbnail} alt={photo.title} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110" loading="lazy" /></span>
-                <span className="block truncate text-center text-xs text-white/80">{photo.title}</span>
+                <span className="mb-1 block h-20 w-24 overflow-hidden rounded-xl"><img src={photo.thumbnail} alt={photo.date} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110" loading="lazy" /></span>
+                <span className="block truncate text-center text-xs text-white/80">{photo.date}</span>
               </button>
             ))}
           </div>
