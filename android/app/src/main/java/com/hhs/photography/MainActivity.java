@@ -220,7 +220,10 @@ public final class MainActivity extends Activity {
         if (request == PICK && Build.VERSION.SDK_INT >= 33) {
             Intent album=new Intent(MediaStore.ACTION_PICK_IMAGES).setType("image/*");
             if (relinkId == null || relinkId.isEmpty()) album.putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX,Math.min(100,MediaStore.getPickImagesMaxLimit()));
-            if (album.resolveActivity(getPackageManager()) != null) intent=album;
+            // Start directly: package visibility can make resolveActivity report
+            // false even though the system photo picker can be launched.
+            try { startActivityForResult(album,request); return; }
+            catch (android.content.ActivityNotFoundException unavailable) { /* Document picker fallback below. */ }
         }
         try { startActivityForResult(intent,request); } catch (Exception error) { notice("无法打开选择器","请使用手机系统文件或相册提供者。"); }
     }
