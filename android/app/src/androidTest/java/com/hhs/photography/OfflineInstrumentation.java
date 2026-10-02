@@ -22,6 +22,7 @@ import java.util.zip.*;
 /** Framework-only device regression tests: no additional runtime/test dependencies. */
 public final class OfflineInstrumentation extends Instrumentation {
     private boolean networkOnly;
+    private MainActivity captureActivity;
     @Override public void onCreate(Bundle args) { super.onCreate(args); networkOnly=args!=null&&"true".equals(args.getString("updateNetwork")); start(); }
     private static void check(boolean condition, String message) { if (!condition) throw new AssertionError(message); }
     private static String albumState(PhotoStore store) throws Exception {
@@ -56,6 +57,11 @@ public final class OfflineInstrumentation extends Instrumentation {
         throw new AssertionError("Offline UI condition failed: "+condition+"; "+js(activity,"window.Album&&Album.debug()"));
     }
     private void screenshot(String name) throws Exception {
+        CountDownLatch frame=new CountDownLatch(1);
+        runOnMainSync(() -> captureActivity.uiView().postVisualStateCallback(System.nanoTime(),new android.webkit.WebView.VisualStateCallback() {
+            @Override public void onComplete(long requestId) { captureActivity.uiView().invalidate(); frame.countDown(); }
+        }));
+        check(frame.await(10,TimeUnit.SECONDS),"WebView visual state did not reach screenshot frame");
         waitForIdleSync();Thread.sleep(650);
         android.view.accessibility.AccessibilityNodeInfo root=getUiAutomation().getRootInActiveWindow();
         check(root != null && getTargetContext().getPackageName().contentEquals(root.getPackageName()),"External system window obscures album screenshot: " + (root == null ? "none" : root.getPackageName()));
@@ -81,10 +87,12 @@ public final class OfflineInstrumentation extends Instrumentation {
             check(wrong && main.list(false).size()==6,"Wrong re-link modified album");
         }
         MainActivity activity=(MainActivity)startActivitySync(new Intent(getTargetContext(),MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        captureActivity=activity;
         waitJs(activity,"!!window.Album&&Album.debug().ready");
         stage("viewport "+js(activity,"({width:innerWidth,height:innerHeight,density:devicePixelRatio,top:getComputedStyle(document.documentElement).getPropertyValue('--safe-top'),bottom:getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom')})"));
         check("true".equals(js(activity,"innerHeight/innerWidth>2.1&&innerWidth>=390&&innerWidth<=410")),"Emulator did not use the Xiaomi 15 target viewport");
-        check("6".equals(js(activity,"Album.debug().photoCount")),"Native snapshot not delivered");screenshot("home");
+        check("6".equals(js(activity,"Album.debug().photoCount")),"Native snapshot not delivered");
+        waitJs(activity,"document.getElementById('page-home').getBoundingClientRect().width>=innerWidth-1&&document.getElementById('hero-image').naturalWidth>0&&!document.getElementById('hero').classList.contains('empty')");screenshot("home");
         check("true".equals(js(activity,"Album.debug().motion")),"Device tests must exercise WebView animations");
         runOnMainSync(()->{
             for(String blocked:new String[]{"https://example.com/ui/app.js","file:///data/data/private","https://appassets.androidplatform.net/ui/../private","https://appassets.androidplatform.net/media/raw/"+ids.get(0)+".jpg"})check(activity.resource(Uri.parse(blocked),"GET").getStatusCode()==404,"Resource escaped allowlist");
@@ -105,7 +113,9 @@ public final class OfflineInstrumentation extends Instrumentation {
         waitJs(activity,"!document.getElementById('viewer').hidden&&getComputedStyle(document.getElementById('viewer')).opacity==='1'&&!document.querySelector('.morph-image')");
         js(activity,"(Album.back(),Album.navigate('map'))");waitJs(activity,"Album.debug().page==='map'&&document.getElementById('map-canvas').width>0");screenshot("map");
         js(activity,"Album.navigate('analytics')");waitJs(activity,"document.querySelectorAll('.stat-card').length===4");screenshot("analytics");
-        js(activity,"Album.navigate('studio')");screenshot("studio");
+        js(activity,"Album.navigate('studio')");
+        waitJs(activity,"document.getElementById('page-studio').getBoundingClientRect().width>=innerWidth-1&&document.querySelector('.studio-card').getBoundingClientRect().width>=innerWidth-50&&document.getElementById('nav-studio').classList.contains('selected')");screenshot("studio");
+        js(activity,"document.getElementById('studio-check-update').scrollIntoView({block:'center'})");screenshot("updates");
         check("true".equals(js(activity,"!!document.getElementById('studio-check-update')&&document.getElementById('studio-apply-update').hidden")),"Update controls missing or staged unexpectedly");
         check("true".equals(js(activity,"getComputedStyle(document.querySelector('.bottom-nav')).bottom!=='0px'")),"Navigation safe inset lost");
         js(activity,"Album.pause(true)");check("true".equals(js(activity,"document.body.classList.contains('paused')")),"Pause doesn't stop UI animation");js(activity,"Album.pause(false)");
@@ -136,8 +146,16 @@ public final class OfflineInstrumentation extends Instrumentation {
             try (PhotoStore main=new PhotoStore(getTargetContext())) {
                 String before=albumState(main); long bytes=main.bytes();
                 UiUpdates updater=new UiUpdates(getTargetContext());updater.check();
+                String pin;try (InputStream input=getTargetContext().getAssets().open("updates/public-key.txt")) { pin=new String(UiUpdates.readLimited(input,16384),java.nio.charset.StandardCharsets.UTF_8); }
+                File cache=new File(getTargetContext().getNoBackupFilesDir(),"network-update-test-"+System.nanoTime());
+                JSONObject oldBaseline=new JSONObject().put("version",0).put("release","simulate-older-apk").put("protocol",1);
+                UiUpdates older=new UiUpdates(cache,pin,oldBaseline);older.check();
+                long downloaded=older.status().getLong("pendingVersion");check(downloaded>0,"No real signed UI staged for older APK");
+                older.apply();check(older.beginSession().version==downloaded,"Real network update failed activation");older.ready();
+                older=new UiUpdates(cache,pin,oldBaseline);check(older.beginSession().version==downloaded,"Offline cached network UI failed restart");older.ready();
+                older.rollback("network test rollback");check(older.beginSession()==null,"Real network update cannot roll back");
                 check(before.equals(albumState(main))&&bytes==main.bytes(),"UI download modified private album");
-                networkResult.putString("stream","UI_UPDATE_NETWORK_OK: fixed HTTPS endpoint, pinned signature, compatible resources, private album unchanged; "+updater.status()+"\n");
+                networkResult.putString("stream","UI_UPDATE_NETWORK_OK: fixed HTTPS endpoint, pinned signature, real download/stage/activation/offline-restart/rollback, private album unchanged; version="+downloaded+"; "+updater.status()+"\n");
                 finish(Activity.RESULT_OK,networkResult);
             } catch (Throwable error) { networkResult.putString("stream","UI_UPDATE_NETWORK_FAILED: "+error+"\n");finish(Activity.RESULT_CANCELED,networkResult); }
             return;

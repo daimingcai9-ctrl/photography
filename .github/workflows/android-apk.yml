@@ -74,7 +74,7 @@ jobs:
             adb logcat -d -s AndroidRuntime System.err ActivityTaskManager chromium AlbumUI > offline-device-log.txt
             grep -q 'OFFLINE_TESTS_OK' offline-test-results.txt
             mkdir -p ui-screenshots
-            for page in home gallery detail map analytics studio; do adb exec-out run-as com.hhs.photography.offline cat files/ui-$page.png > ui-screenshots/ui-$page.png; test -s ui-screenshots/ui-$page.png; done
+            for page in home gallery detail map analytics studio updates; do adb exec-out run-as com.hhs.photography.offline cat files/ui-$page.png > ui-screenshots/ui-$page.png; test -s ui-screenshots/ui-$page.png; done
             adb shell svc wifi enable
             adb shell svc data enable
             sleep 5
