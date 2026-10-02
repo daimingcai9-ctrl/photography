@@ -56,6 +56,7 @@ jobs:
         with:
           api-level: ${{ matrix.android-api }}
           arch: x86_64
+          profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -memory 1536 -camera-back none -camera-front none
           script: |
@@ -68,12 +69,20 @@ jobs:
             timeout 240s adb shell am instrument -w com.hhs.photography.offline.test/com.hhs.photography.OfflineInstrumentation | tee offline-test-results.txt
             adb logcat -d -s AndroidRuntime System.err ActivityTaskManager chromium AlbumUI > offline-device-log.txt
             grep -q 'OFFLINE_TESTS_OK' offline-test-results.txt
-            adb pull /sdcard/Android/data/com.hhs.photography.offline/files/ ui-screenshots
+            mkdir -p ui-screenshots
+            for page in home gallery detail map analytics studio; do adb exec-out run-as com.hhs.photography.offline cat files/ui-$page.png > ui-screenshots/ui-$page.png; test -s ui-screenshots/ui-$page.png; done
             adb uninstall com.hhs.photography.offline.test
             adb uninstall com.hhs.photography.offline
             adb install android/app/build/outputs/apk/release/app-release.apk
             adb shell am start -W -n com.hhs.photography.offline/com.hhs.photography.MainActivity
-            sleep 3
+            ready=0
+            for attempt in $(seq 1 15); do
+              adb shell uiautomator dump /sdcard/release-window.xml
+              adb pull /sdcard/release-window.xml release-window.xml
+              if grep -q '光影视界首页' release-window.xml && grep -q '进入色彩画廊' release-window.xml; then ready=1; break; fi
+              sleep 2
+            done
+            test "$ready" = 1
             adb shell screencap -p /sdcard/offline-gallery.png
             adb pull /sdcard/offline-gallery.png offline-gallery.png
       - name: Name installable APK
@@ -86,6 +95,7 @@ jobs:
           path: |
             offline-test-results.txt
             offline-device-log.txt
+            release-window.xml
             android/app/build/reports/lint-results-release.html
           if-no-files-found: ignore
           retention-days: 7

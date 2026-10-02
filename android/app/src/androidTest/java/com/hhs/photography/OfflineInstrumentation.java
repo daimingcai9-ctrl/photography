@@ -53,7 +53,7 @@ public final class OfflineInstrumentation extends Instrumentation {
     }
     private void screenshot(String name) throws Exception {
         waitForIdleSync();Thread.sleep(650);Bitmap bitmap=getUiAutomation().takeScreenshot();check(bitmap!=null,"No screenshot");
-        try(OutputStream output=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),"ui-"+name+".png"))){bitmap.compress(Bitmap.CompressFormat.PNG,100,output);}finally{bitmap.recycle();}
+        try(OutputStream output=new FileOutputStream(new File(getTargetContext().getFilesDir(),"ui-"+name+".png"))){bitmap.compress(Bitmap.CompressFormat.PNG,100,output);}finally{bitmap.recycle();}
     }
     private void uiTests() throws Exception {
         stage("bundled offline UI, real referenced public fixtures");fixture("gallery");
@@ -74,6 +74,8 @@ public final class OfflineInstrumentation extends Instrumentation {
         }
         MainActivity activity=(MainActivity)startActivitySync(new Intent(getTargetContext(),MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         waitJs(activity,"!!window.Album&&Album.debug().ready");
+        stage("viewport "+js(activity,"({width:innerWidth,height:innerHeight,density:devicePixelRatio,top:getComputedStyle(document.documentElement).getPropertyValue('--safe-top'),bottom:getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom')})"));
+        check("true".equals(js(activity,"innerHeight/innerWidth>2.1&&innerWidth>=390&&innerWidth<=410")),"Emulator did not use the Xiaomi 15 target viewport");
         check("6".equals(js(activity,"Album.debug().photoCount")),"Native snapshot not delivered");screenshot("home");
         runOnMainSync(()->{
             for(String blocked:new String[]{"https://example.com/ui/app.js","file:///data/data/private","https://appassets.androidplatform.net/ui/../private","https://appassets.androidplatform.net/media/raw/"+ids.get(0)+".jpg"})check(activity.resource(Uri.parse(blocked),"GET").getStatusCode()==404,"Resource escaped allowlist");
