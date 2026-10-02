@@ -37,7 +37,10 @@
       if (message.ok) operation.resolve(message.data); else operation.reject(new Error(message.error || "操作失败")); return;
     }
     const data=message.data || {};
-    if (message.event === "changed") snapshot(data);
+    if (message.event === "changed") {
+      snapshot(data);
+      if (state.detail) { if (state.photos.some((p) => p.id===state.detail)) openPhoto(state.detail,null,state.sequence); else closeViewer(false); }
+    }
     if (message.event === "progress") {
       setBusy(!!data.busy); $("progress-banner").hidden=!data.busy;
       $("progress-message").textContent=data.message || "正在处理…";
@@ -209,9 +212,9 @@
   function resetZoom() { zoom=1;panX=0;panY=0;pointers.clear(); $("viewer-image").style.transform=""; }
   function zoomTransform() { $("viewer-image").style.transform="translate("+panX+"px,"+panY+"px) scale("+zoom+")"; }
   const viewerStage=$("viewer-stage");
-  viewerStage.addEventListener("pointerdown",(event) => { viewerStage.setPointerCapture(event.pointerId); pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+  viewerStage.addEventListener("pointerdown",(event) => { if (event.target.closest("button")) return; viewerStage.setPointerCapture(event.pointerId); pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
     if (pointers.size===1) gestureStart={x:event.clientX,y:event.clientY,panX,panY,scroll:document.querySelector(".viewer-scroll").scrollTop};
-    if (pointers.size===2) { const [a,b]=[...pointers.values()]; startDistance=Math.hypot(a.x-b.x,a.y-b.y); startZoom=zoom; } });
+    if (pointers.size===2) { const [a,b]=[...pointers.values()]; startDistance=Math.hypot(a.x-b.x,a.y-b.y); startZoom=zoom; gestureStart=null; } });
   viewerStage.addEventListener("pointermove",(event) => {
     if (!pointers.has(event.pointerId)) return; pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
     if (pointers.size===2) { const [a,b]=[...pointers.values()]; zoom=Math.max(1,Math.min(4,startZoom*Math.hypot(a.x-b.x,a.y-b.y)/Math.max(1,startDistance))); if (zoom===1) panX=panY=0; zoomTransform(); }
