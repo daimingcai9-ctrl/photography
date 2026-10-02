@@ -29,7 +29,7 @@ import java.util.concurrent.Executors;
 
 /** Native, offline-first library. Opening the public website is an explicit external action. */
 public final class MainActivity extends Activity {
-    private static final int PICK = 100, BACKUP = 101, GIT = 102, RESTORE = 103;
+    private static final int PICK = 100, BACKUP = 101, GIT = 102, RESTORE = 103, FILES = 104;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final LruCache<String, Bitmap> thumbs = new LruCache<String, Bitmap>(12 * 1024 * 1024) {
         @Override protected int sizeOf(String key, Bitmap value) { return value.getAllocationByteCount(); }
@@ -77,7 +77,7 @@ public final class MainActivity extends Activity {
     private void showLibrary() {
         detail = false; root.removeAllViews(); controls.clear();
         root.addView(text("光影视界 · 手机离线相册", 23));
-        TextView hint = text("独立手机存储 · 无需网络 · 不自动发布照片", 12); hint.setTextColor(Color.LTGRAY); root.addView(hint);
+        TextView hint = text("引用手机原图 · 私人信息与缓存 · 不自动发布", 12); hint.setTextColor(Color.LTGRAY); root.addView(hint);
         LinearLayout row = new LinearLayout(this);
         control(row, "相册多选导入", () -> pick(PICK));
         control(row, "回收站", this::trash);
@@ -89,7 +89,7 @@ public final class MainActivity extends Activity {
         colors.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, new String[]{"全部色彩", "红", "橙", "黄", "绿", "青", "蓝", "紫", "粉", "棕", "灰", "黑", "白"}));
         root.addView(colors);
         stats = text("", 12); root.addView(stats);
-        status = text("准备就绪。原片会复制到应用存储，不修改系统相册。", 12); status.setTextColor(Color.LTGRAY); root.addView(status);
+        status = text("新导入只引用原图，保留展示缓存；请勿删除系统原片。", 12); status.setTextColor(Color.LTGRAY); root.addView(status);
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); progress.setVisibility(View.GONE); root.addView(progress);
         grid = new GridView(this); grid.setNumColumns(getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE ? 4 : 2);
         grid.setHorizontalSpacing(dp(8)); grid.setVerticalSpacing(dp(8));
@@ -112,7 +112,8 @@ public final class MainActivity extends Activity {
                         String c = row.photo.optString("camera"); if (!c.equals("未知")) cameras.add(c);
                         JSONObject loc = row.photo.optJSONObject("location"); if (loc != null && !loc.optString("name").equals("未知")) places.add(loc.optString("name"));
                     }
-                    stats.setText(rows.size() + " 张 · " + cameras.size() + " 台设备 · " + places.size() + " 个地点 · " + String.format(Locale.ROOT, "%.1f MB", bytes / 1048576.0));
+                    int references = 0; for (PhotoStore.Record row : rows) if (row.referenced()) references++;
+                    stats.setText(rows.size() + " 张（引用 " + references + "）· " + cameras.size() + " 台设备 · " + places.size() + " 个地点 · 应用缓存/旧副本 " + String.format(Locale.ROOT, "%.1f MB", bytes / 1048576.0));
                     filter();
                 });
             } catch (Exception error) { ui(() -> alert("读取失败", message(error))); }
@@ -160,8 +161,10 @@ public final class MainActivity extends Activity {
     private void pick(int request) {
         if (busy) return;
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType(request == PICK ? "image/*" : "*/*");
-        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, request == PICK); intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        boolean photos = request == PICK || request == FILES;
+        intent.setType(photos ? "image/*" : "*/*");
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, photos);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         if (request == PICK && Build.VERSION.SDK_INT >= 33) {
             Intent album = new Intent(MediaStore.ACTION_PICK_IMAGES).setType("image/*")
                 .putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, Math.min(100, MediaStore.getPickImagesMaxLimit()));
@@ -172,7 +175,7 @@ public final class MainActivity extends Activity {
     private void export(int request) {
         if (busy) return;
         String warning = request == GIT ? "导出包只包含当前照片的展示图和网站元数据，不包含原片，也不是完整备份。它不会自动提交 Git；以后发布到网站会公开这些照片。"
-            : "导出完整原片、编辑信息和回收站。ZIP 未加密，原片可能含精确 GPS，请保存在你信任的位置。卸载或清除应用数据前必须先备份。";
+            : "这次备份会读取引用的原图并复制进 ZIP，含编辑信息和回收站；日常导入不复制原片。原图缺失或授权失效会中止，不会用缓存冒充原片。ZIP 未加密，可能含精确 GPS。恢复到应用会创建独立副本，不恢复原相册引用。";
         new AlertDialog.Builder(this).setTitle(request == GIT ? "导出 Git 发布包" : "导出完整备份").setMessage(warning).setNegativeButton("取消", null).setPositiveButton("选择保存位置", (d, w) -> {
             Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip");
             intent.putExtra(Intent.EXTRA_TITLE, request == GIT ? "hhs-git-photos.zip" : "hhs-album-" + System.currentTimeMillis() + ".zip");
@@ -181,16 +184,17 @@ public final class MainActivity extends Activity {
     }
     private void menu() {
         if (busy) return;
-        new AlertDialog.Builder(this).setTitle("私人相册").setItems(new String[]{"导出完整备份（含原片）", "恢复备份（合并，不覆盖已有照片）", "导出 Git 发布包", "打开公开网站", "使用说明"}, (d, which) -> {
+        new AlertDialog.Builder(this).setTitle("私人相册").setItems(new String[]{"导出完整备份（含原片）", "恢复备份（合并，不覆盖已有照片）", "导出 Git 发布包", "打开公开网站", "使用说明", "从文件选择器引用原图（相册授权失败时）"}, (d, which) -> {
             if (which == 0) export(BACKUP); else if (which == 1) pick(RESTORE); else if (which == 2) export(GIT);
             else if (which == 3) { try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://photography-hhs.pages.dev/gallery"))); } catch (Exception error) { alert("无法打开浏览器", message(error)); } }
-            else alert("使用说明", "本机相册与公开网站独立。\n\n一次可从系统选择器多选最多 100 张，单张最大 25MB / 6400 万像素；系统必须能解码照片格式。导入期间请保持应用打开，已完成照片会立即保存。\n\nEXIF 被原软件移除的信息无法恢复，可手动补录。回收站仍占用空间，可恢复或确认永久删除；不会删除系统相册原片。\n\n请定期导出完整备份。卸载或清除数据会移除应用内照片。Git 发布包不包含原片，不是备份，也不会自动同步。");
+            else if (which == 5) pick(FILES);
+            else alert("使用说明", "新导入只保存系统原图的长期读取引用、图片信息和展示/缩略图缓存，不保存原片副本。原图仍在原来的相册，删除/移动原图或撤销授权可能失联；详情会提示并可重新选择同一原图。只在云端的照片取决于提供者，不保证断网可读原片。\n\n一次最多 100 张，单张最大 25MB / 6400 万像素；HEIC 取决于系统支持。授权失败时可用更多中的文件选择器；不会偷偷切回复制模式。导入期间保持应用打开。\n\n旧版导入/备份恢复的独立原片副本继续保留，不自动删照片。回收站只管理应用记录和缓存，不会删除系统原片。\n\n完整备份会复制可读取的原片进 ZIP；恢复会存入应用私有目录。卸载或清除数据会删除引用、编辑和缓存/旧副本，但不会删除系统相册原图。Git 导出接口保留，不自动公开。");
         }).show();
     }
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
         if (result != RESULT_OK || data == null || busy || store == null) return;
-        if (request == PICK) {
+        if (request == PICK || request == FILES) {
             LinkedHashSet<Uri> selected = new LinkedHashSet<>();
             if (data.getClipData() != null) for (int i = 0; i < data.getClipData().getItemCount() && selected.size() < 100; i++) selected.add(data.getClipData().getItemAt(i).getUri());
             else if (data.getData() != null) selected.add(data.getData());
@@ -221,21 +225,21 @@ public final class MainActivity extends Activity {
                 String name = "照片"; long modified = 0;
                 try {
                     if (!"content".equals(uri.getScheme())) throw new IOException("只允许系统相册或文件提供者的照片");
+                    try { getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); }
+                    catch (SecurityException error) { throw new IOException("选择器不支持长期读取授权，请用更多 → 从文件选择器引用原图", error); }
                     try (Cursor c = getContentResolver().query(uri, null, null, null, null)) {
                         if (c != null && c.moveToFirst()) {
                             int n = c.getColumnIndex(OpenableColumns.DISPLAY_NAME), m = c.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED);
                             if (n >= 0) name = c.getString(n); if (m >= 0) modified = c.getLong(m);
                         }
                     }
-                    try (InputStream input = getContentResolver().openInputStream(uri)) {
-                        if (input == null) throw new IOException("无法读取照片");
-                        PhotoStore.ImportResult result = store.importPhoto(input, name, getContentResolver().getType(uri), modified);
-                        if (result.status.equals("duplicate")) duplicates++; else if (result.status.equals("restored")) restored++; else saved++;
-                    }
+                    PhotoStore.ImportResult result = store.importReference(uri, name, getContentResolver().getType(uri), modified);
+                    if (result.status.equals("duplicate")) duplicates++; else if (result.status.equals("restored")) restored++; else saved++;
                 } catch (Exception error) { if (errors.size() < 100) errors.add(name + "：" + message(error)); }
+                finally { store.releaseUnused(uri); }
                 int finished = ++done; ui(() -> { progress.setMax(uris.size()); progress.setProgress(finished); status.setText("逐张导入 " + finished + " / " + uris.size() + "；已完成的照片已保存"); });
             }
-            String result = "新保存 " + saved + " 张，重复跳过 " + duplicates + " 张，回收站恢复 " + restored + " 张，失败 " + errors.size() + " 张。";
+            String result = "新引用 " + saved + " 张，重复/重新关联 " + duplicates + " 张，回收站恢复 " + restored + " 张，失败 " + errors.size() + " 张。";
             ui(() -> { setBusy(false, result); load(); if (!errors.isEmpty()) alert("部分照片未导入", result + "\n\n" + String.join("\n", errors) + "\n\n可以重新选择失败照片，成功照片不会重复入库。"); });
         });
     }
@@ -250,16 +254,35 @@ public final class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this); LinearLayout content = column(); scroll.addView(content); root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         ImageView image = new ImageView(this); image.setScaleType(ImageView.ScaleType.FIT_CENTER); image.setContentDescription(p.optString("title"));
         content.addView(image, new LinearLayout.LayoutParams(-1, dp(340)));
-        worker.execute(() -> { try { Bitmap bitmap = PhotoStore.decode(store.image(record.id), 1920, 1); ui(() -> { if (detail && image.isAttachedToWindow()) image.setImageBitmap(bitmap); else bitmap.recycle(); }); } catch (Exception error) { ui(() -> alert("读取失败", message(error))); } });
+        TextView sourceStatus = text(record.referenced() ? "正在读取系统原图…" : "旧版/备份恢复的原片副本仍保存在应用中。", 12);
+        worker.execute(() -> {
+            try {
+                Bitmap bitmap; boolean fallback;
+                try { bitmap = store.decodeOriginal(record, 1920); fallback = false; }
+                catch (IOException | SecurityException missing) { bitmap = PhotoStore.decode(store.image(record.id), 1920, 1); fallback = true; }
+                Bitmap result = bitmap; boolean cached = fallback;
+                ui(() -> {
+                    if (detail && image.isAttachedToWindow()) {
+                        image.setImageBitmap(result);
+                        sourceStatus.setText(cached ? "原图不可用/授权失效：当前仅显示展示缓存，不是原片。请重新选择同一原图；完整备份需要原图。"
+                            : record.referenced() ? "正在显示引用的系统原图；应用不保存原片副本。" : "正在显示保留的应用原片副本。升级不会自动删除它。");
+                    } else result.recycle();
+                });
+            } catch (Exception error) { ui(() -> alert("读取失败", message(error))); }
+        });
         content.addView(text(p.optString("title"), 22));
         content.addView(text(p.optString("date") + " · " + p.optJSONObject("location").optString("name"), 15));
         content.addView(text("设备：" + p.optString("camera") + "\n镜头：" + p.optString("lens") + "\nISO：" + p.optInt("iso") + "  " + p.optString("aperture") + "  " + p.optString("shutter")
             + "\n展示图：" + p.optInt("width") + " × " + p.optInt("height") + "\n标签：" + p.optJSONArray("tags").toString(), 14));
         LinearLayout palette = new LinearLayout(this); JSONArray shades = p.optJSONArray("palette");
         for (int i = 0; i < shades.length(); i++) { View swatch = new View(this); swatch.setBackgroundColor(Color.parseColor(shades.optString(i))); palette.addView(swatch, new LinearLayout.LayoutParams(0, dp(32), 1)); } content.addView(palette);
-        content.addView(text("原片保存在本机应用目录；这张照片尚未自动发布。", 12));
+        content.addView(sourceStatus);
+        content.addView(text("这张照片没有自动发布到网站。", 12));
+        if (record.referenced()) content.addView(button("重新选择同一原图 / 恢复授权", () -> {
+            showLibrary(); pick(PICK);
+        }));
         content.addView(button("编辑标题 / 日期 / 地点 / 设备 / 标签", () -> edit(record)));
-        content.addView(button("移入回收站（不删除系统原片）", () -> new AlertDialog.Builder(this).setMessage("移入回收站？可以恢复，本机副本仍占用空间。").setNegativeButton("取消", null).setPositiveButton("移入", (d,w) -> {
+        content.addView(button("移入回收站（不删除系统原片）", () -> new AlertDialog.Builder(this).setMessage("移入回收站？可以恢复，应用缓存/旧副本仍占用空间，不修改系统原片。").setNegativeButton("取消", null).setPositiveButton("移入", (d,w) -> {
             worker.execute(() -> { store.trash(record.id); ui(this::showLibrary); });
         }).show()));
     }
@@ -291,7 +314,7 @@ public final class MainActivity extends Activity {
                     PhotoStore.Record row = rows.get(index);
                     new AlertDialog.Builder(this).setTitle(row.photo.optString("title")).setMessage("恢复可返回画廊。永久删除仅移除应用副本，不删除系统相册原片；此操作不可撤销。")
                         .setNeutralButton("取消", null).setPositiveButton("恢复", (dd,w) -> mutateTrash(row.id, false))
-                        .setNegativeButton("永久删除", (dd,w) -> new AlertDialog.Builder(this).setMessage("确认永久删除应用内的原片和缩略图？请先备份。")
+                        .setNegativeButton("永久删除", (dd,w) -> new AlertDialog.Builder(this).setMessage("确认删除应用记录、缓存/旧版副本并释放引用授权？不会删除系统相册的原图。")
                             .setNegativeButton("取消", null).setPositiveButton("确认永久删除", (ddd,ww) -> mutateTrash(row.id, true)).show()).show();
                 }).setPositiveButton("关闭", null).show());
             } catch (Exception error) { ui(() -> alert("回收站读取失败", message(error))); }

@@ -17,7 +17,7 @@ export default function StudioPage() {
       <p className="mt-3 leading-7 text-white/60">在项目目录运行下面的命令，打开终端显示的本地管理地址，使用终端中的临时密码登录。</p>
       <pre className="my-4 overflow-x-auto rounded-xl bg-black/30 p-4">pnpm studio</pre>
       <p className="leading-7 text-white/60">支持批量导入、自动读取拍摄信息、编辑和删除。新照片不会自动上传到 GitHub 或公开网站。</p>
-      <p className="mt-3 leading-7 text-white/60">安卓手机可使用独立离线相册 APK：相册多选导入，照片和信息保存在手机里，断网也能查看，不需要电脑或付费存储。它与公开网站独立，不会自动发布手机照片。</p>
+      <p className="mt-3 leading-7 text-white/60">安卓手机可使用私人相册 APK：多选引用手机原图，不再复制原片，只保存图片信息和展示缓存。删除原图或撤销授权后会提示失联，可重新选择原图恢复关联。它与公开网站独立，不需要付费存储，不自动发布手机照片。</p>
       <p className="mt-3 leading-7 text-white/60">手机相册需要定期导出完整备份；以后想发布到网站，可导出 Git 发布包，再在电脑上确认同步。线上网页不会直接写入手机的私人相册。</p>
       <p className="mt-3 leading-7 text-white/60">已保留 Git 发布接口，以后需要同步时可先运行 <code>pnpm photos:sync</code> 查看待发布的改动，再明确确认发布。</p>
     </section>

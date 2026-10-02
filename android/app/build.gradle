@@ -8,7 +8,7 @@ android {
         minSdk 26
         targetSdk 36
         versionCode 100 + (System.getenv('GITHUB_RUN_NUMBER')?.toInteger() ?: 2)
-        versionName '2.0-offline'
+        versionName '2.1-reference'
         testInstrumentationRunner 'com.hhs.photography.OfflineInstrumentation'
     }
     signingConfigs {

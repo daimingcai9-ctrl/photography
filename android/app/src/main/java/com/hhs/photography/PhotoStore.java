@@ -2,6 +2,9 @@ package com.hhs.photography;
 
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.ContentResolver;
+import android.content.Intent;
+import android.net.Uri;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
@@ -25,14 +28,16 @@ import java.util.zip.ZipOutputStream;
 public final class PhotoStore extends SQLiteOpenHelper {
     public static final long MAX_FILE = 25L * 1024 * 1024;
     private final File root;
+    private final ContentResolver resolver;
     public static final class Record {
-        public final String id, name, mime;
+        public final String id, name, mime, sourceUri;
         public final JSONObject photo;
         public final boolean deleted;
         Record(Cursor c) throws Exception {
             id = c.getString(0); photo = new JSONObject(c.getString(1)); name = c.getString(2);
-            mime = c.getString(3); deleted = c.getInt(4) != 0;
+            mime = c.getString(3); deleted = c.getInt(4) != 0; sourceUri = c.getString(5);
         }
+        public boolean referenced() { return !sourceUri.isEmpty(); }
     }
     public static final class ImportResult {
         public final String id, status;
@@ -42,7 +47,8 @@ public final class PhotoStore extends SQLiteOpenHelper {
 
     public PhotoStore(Context context) throws IOException { this(context, "main"); }
     PhotoStore(Context context, String library) throws IOException {
-        super(context, "offline-" + library + ".db", null, 1);
+        super(context, "offline-" + library + ".db", null, 2);
+        resolver = context.getContentResolver();
         root = new File(context.getNoBackupFilesDir(), "album-" + library);
         if (!root.isDirectory() && !root.mkdirs()) throw new IOException("无法创建手机相册存储");
         getWritableDatabase();
@@ -50,9 +56,12 @@ public final class PhotoStore extends SQLiteOpenHelper {
         if (files != null) for (File f : files) if (f.getName().endsWith(".part")) f.delete();
     }
     @Override public void onCreate(SQLiteDatabase db) {
-        db.execSQL("CREATE TABLE photos(id TEXT PRIMARY KEY, metadata TEXT NOT NULL, original_name TEXT NOT NULL, mime TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0, date TEXT NOT NULL)");
+        db.execSQL("CREATE TABLE photos(id TEXT PRIMARY KEY, metadata TEXT NOT NULL, original_name TEXT NOT NULL, mime TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0, date TEXT NOT NULL, source_uri TEXT NOT NULL DEFAULT '')");
     }
-    @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) { /* Future migrations must preserve the library. */ }
+    @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        // An empty URI keeps v1 originals in place. Never discard existing private photos.
+        if (oldVersion < 2) db.execSQL("ALTER TABLE photos ADD COLUMN source_uri TEXT NOT NULL DEFAULT ''");
+    }
     private String safeId(String id) {
         if (!id.matches("mobile-[a-f0-9]{64}")) throw new IllegalArgumentException("照片 ID 不正确");
         return id;
@@ -62,22 +71,57 @@ public final class PhotoStore extends SQLiteOpenHelper {
     public File thumb(String id) { return new File(root, safeId(id) + ".thumb.jpg"); }
     public List<Record> list(boolean deleted) throws Exception {
         ArrayList<Record> rows = new ArrayList<>();
-        try (Cursor c = getReadableDatabase().rawQuery("SELECT id,metadata,original_name,mime,deleted FROM photos WHERE deleted=? ORDER BY date DESC, rowid DESC", new String[]{deleted ? "1" : "0"})) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT id,metadata,original_name,mime,deleted,source_uri FROM photos WHERE deleted=? ORDER BY date DESC, rowid DESC", new String[]{deleted ? "1" : "0"})) {
             while (c.moveToNext()) rows.add(new Record(c));
         }
         return rows;
     }
     public Record find(String id) throws Exception {
-        try (Cursor c = getReadableDatabase().rawQuery("SELECT id,metadata,original_name,mime,deleted FROM photos WHERE id=?", new String[]{safeId(id)})) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT id,metadata,original_name,mime,deleted,source_uri FROM photos WHERE id=?", new String[]{safeId(id)})) {
             return c.moveToFirst() ? new Record(c) : null;
         }
     }
     public long bytes() { long n = 0; File[] files = root.listFiles(); if (files != null) for (File f : files) n += f.length(); return n; }
 
     public ImportResult importPhoto(InputStream input, String name, String mime, long modified) throws Exception {
-        return importPhoto(input, name, mime, modified, null, null);
+        return importPhoto(input, name, mime, modified, null, null, null);
     }
-    private ImportResult importPhoto(InputStream input, String name, String mime, long modified, String expected, JSONObject backup) throws Exception {
+    public ImportResult importReference(Uri uri, String name, String mime, long modified) throws Exception {
+        requireGrant(uri);
+        try (InputStream input = openUri(uri)) { return importPhoto(input, name, mime, modified, null, null, uri); }
+    }
+    private void requireGrant(Uri uri) throws IOException {
+        if (!"content".equals(uri.getScheme())) throw new IOException("仅支持系统提供者的原图引用");
+        for (android.content.UriPermission grant : resolver.getPersistedUriPermissions())
+            if (grant.isReadPermission() && grant.getUri().equals(uri)) return;
+        throw new IOException("原图长期授权已失效，请在相册/文件选择器重新选择这张原图");
+    }
+    private InputStream openUri(Uri uri) throws IOException {
+        requireGrant(uri);
+        try {
+            InputStream input = resolver.openInputStream(uri);
+            if (input == null) throw new IOException("提供者无法读取原图");
+            return input;
+        } catch (SecurityException error) { throw new IOException("原图授权已失效，请重新选择原图", error); }
+    }
+    public boolean usesUri(Uri uri) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT 1 FROM photos WHERE source_uri=? LIMIT 1", new String[]{uri.toString()})) { return c.moveToFirst(); }
+    }
+    public void releaseUnused(Uri uri) {
+        if (!usesUri(uri)) try { resolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (SecurityException ignored) { }
+    }
+    private InputStream openOriginal(Record row) throws IOException {
+        return row.referenced() ? openUri(Uri.parse(row.sourceUri)) : new FileInputStream(original(row.id));
+    }
+    public boolean sourceAvailable(Record row) {
+        try (InputStream input = openOriginal(row)) { return input.read() != -1; } catch (IOException | SecurityException error) { return false; }
+    }
+    public Bitmap decodeOriginal(Record row, int maximum) throws IOException {
+        Source source = () -> openOriginal(row);
+        ExifInterface exif = readExif(source);
+        return decode(source, maximum, exif == null ? 1 : exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, 1));
+    }
+    private ImportResult importPhoto(InputStream input, String name, String mime, long modified, String expected, JSONObject backup, Uri uri) throws Exception {
         File raw = new File(root, UUID.randomUUID() + ".part");
         File display = new File(root, UUID.randomUUID() + ".part"), thumbnail = new File(root, UUID.randomUUID() + ".part");
         Bitmap bitmap = null, small = null;
@@ -85,13 +129,13 @@ public final class PhotoStore extends SQLiteOpenHelper {
             if (root.getUsableSpace() < MAX_FILE * 2) throw new IOException("手机剩余空间不足，请先备份并释放空间");
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             long size = 0;
-            try (OutputStream out = new FileOutputStream(raw)) {
+            try (OutputStream out = uri == null ? new FileOutputStream(raw) : null) {
                 byte[] buffer = new byte[65536]; int count;
                 while ((count = input.read(buffer)) != -1) {
                     if (Thread.currentThread().isInterrupted()) throw new InterruptedIOException("导入已取消，已完成的照片仍保留");
                     size += count;
                     if (size > MAX_FILE) throw new IOException("单张原片不能超过 25MB");
-                    digest.update(buffer, 0, count); out.write(buffer, 0, count);
+                    digest.update(buffer, 0, count); if (out != null) out.write(buffer, 0, count);
                 }
             }
             if (size == 0) throw new IOException("图片为空");
@@ -100,16 +144,20 @@ public final class PhotoStore extends SQLiteOpenHelper {
             if (expected != null && !id.equals(expected)) throw new IOException("备份原片校验失败");
             Record existing = find(id);
             if (existing != null) {
+                // Re-selecting the same bytes repairs a missing/revoked reference without
+                // replacing edits. Legacy private copies are deliberately NOT removed.
+                if (uri != null && existing.referenced()) {
+                    ContentValues link = new ContentValues(); link.put("source_uri", uri.toString());
+                    getWritableDatabase().update("photos", link, "id=?", new String[]{id});
+                    if (!existing.sourceUri.equals(uri.toString())) releaseUnused(Uri.parse(existing.sourceUri));
+                }
                 if (existing.deleted && backup == null) { restore(id); return new ImportResult(id, "restored"); }
                 return new ImportResult(id, "duplicate");
             }
-            BitmapFactory.Options bounds = new BitmapFactory.Options(); bounds.inJustDecodeBounds = true;
-            BitmapFactory.decodeFile(raw.getPath(), bounds);
-            if (bounds.outWidth <= 0 || bounds.outHeight <= 0 || (long) bounds.outWidth * bounds.outHeight > 64000000) throw new IOException("图片无法解码或超过 6400 万像素；HEIC/AVIF 需要手机系统支持");
-            ExifInterface exif = null;
-            try { exif = new ExifInterface(raw.getPath()); } catch (IOException ignored) { }
+            Source source = uri == null ? () -> new FileInputStream(raw) : () -> openUri(uri);
+            ExifInterface exif = readExif(source);
             int orientation = exif == null ? 1 : exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, 1);
-            bitmap = decode(raw, 2560, orientation);
+            bitmap = decode(source, 2560, orientation);
             JSONObject photo = metadata(id, name, modified, exif, bitmap.getWidth(), bitmap.getHeight());
             small = scale(bitmap, 400);
             JSONArray palette = palette(small); photo.put("palette", palette); photo.put("dominantColor", palette.getString(0));
@@ -117,11 +165,12 @@ public final class PhotoStore extends SQLiteOpenHelper {
             if (backup != null) applyEdit(photo, backup.getJSONObject("photo"));
             saveJpeg(bitmap, display, 88); saveJpeg(small, thumbnail, 80);
             // Only complete, validated images receive a DB record. Startup cleans partial files.
-            if (original(id).exists()) raw.delete(); else move(raw, original(id));
+            if (uri == null) { if (original(id).exists()) raw.delete(); else move(raw, original(id)); }
             move(display, image(id)); move(thumbnail, thumb(id));
             ContentValues values = new ContentValues(); values.put("id", id); values.put("metadata", photo.toString());
             values.put("original_name", trim(name, 200)); values.put("mime", trim(mime, 100));
             values.put("date", photo.getString("date"));
+            values.put("source_uri", uri == null ? "" : uri.toString());
             values.put("deleted", backup != null && backup.optBoolean("deleted") ? 1 : 0);
             getWritableDatabase().insertOrThrow("photos", null, values);
             return new ImportResult(id, "imported");
@@ -144,10 +193,20 @@ public final class PhotoStore extends SQLiteOpenHelper {
         return Bitmap.createScaledBitmap(bitmap, Math.max(1, (int) (bitmap.getWidth() * factor)), Math.max(1, (int) (bitmap.getHeight() * factor)), true);
     }
     public static Bitmap decode(File file, int maximum, int orientation) throws IOException {
-        BitmapFactory.Options opts = new BitmapFactory.Options(); opts.inJustDecodeBounds = true; BitmapFactory.decodeFile(file.getPath(), opts);
+        return decode(() -> new FileInputStream(file), maximum, orientation);
+    }
+    private interface Source { InputStream open() throws IOException; }
+    private static ExifInterface readExif(Source source) {
+        try (InputStream input = source.open()) { return new ExifInterface(input); } catch (IOException ignored) { return null; }
+    }
+    private static Bitmap decode(Source source, int maximum, int orientation) throws IOException {
+        BitmapFactory.Options opts = new BitmapFactory.Options(); opts.inJustDecodeBounds = true;
+        try (InputStream input = source.open()) { BitmapFactory.decodeStream(input, null, opts); }
+        if (opts.outWidth <= 0 || opts.outHeight <= 0 || (long) opts.outWidth * opts.outHeight > 64000000) throw new IOException("图片无法解码或超过 6400 万像素；HEIC/AVIF 需要手机系统支持");
         opts.inJustDecodeBounds = false; opts.inSampleSize = 1;
         while (Math.max(opts.outWidth, opts.outHeight) / opts.inSampleSize > maximum) opts.inSampleSize *= 2;
-        Bitmap decoded = BitmapFactory.decodeFile(file.getPath(), opts);
+        Bitmap decoded;
+        try (InputStream input = source.open()) { decoded = BitmapFactory.decodeStream(input, null, opts); }
         if (decoded == null) throw new IOException("图片读取失败");
         Matrix matrix = new Matrix();
         switch (orientation) {
@@ -229,18 +288,20 @@ public final class PhotoStore extends SQLiteOpenHelper {
     }
     public void trash(String id) { ContentValues v = new ContentValues(); v.put("deleted", 1); getWritableDatabase().update("photos", v, "id=?", new String[]{safeId(id)}); }
     public void restore(String id) throws IOException {
-        if (!original(id).isFile() || !image(id).isFile() || !thumb(id).isFile()) throw new IOException("本机文件不完整，请从备份恢复");
+        if (!image(id).isFile() || !thumb(id).isFile()) throw new IOException("展示缓存不完整，请从备份恢复");
         ContentValues v = new ContentValues(); v.put("deleted", 0); getWritableDatabase().update("photos", v, "id=?", new String[]{safeId(id)});
     }
     public void erase(String id) throws Exception {
         Record row = find(id); if (row == null || !row.deleted) throw new IOException("只能永久删除回收站中的照片");
         for (File f : new File[]{original(id), image(id), thumb(id)}) if (f.exists() && !f.delete()) throw new IOException("无法删除本机副本");
         getWritableDatabase().delete("photos", "id=?", new String[]{safeId(id)});
+        if (row.referenced()) releaseUnused(Uri.parse(row.sourceUri));
     }
     public void exportZip(OutputStream output, boolean git) throws Exception {
         List<Record> active = list(false), records = new ArrayList<>(active); if (!git) records.addAll(list(true));
         JSONArray photos = new JSONArray(), album = new JSONArray();
         for (Record row : records) {
+            if (!git && !sourceAvailable(row)) throw new IOException("原图不可用：" + row.photo.optString("title") + "；请重新选择原图后再备份（不能用展示缓存冒充原片）");
             if (!row.deleted) photos.put(row.photo);
             album.put(new JSONObject().put("id", row.id).put("photo", row.photo).put("name", row.name).put("mime", row.mime).put("deleted", row.deleted));
         }
@@ -250,12 +311,27 @@ public final class PhotoStore extends SQLiteOpenHelper {
             put(zip, "data/removed-photos.json", "[]".getBytes(StandardCharsets.UTF_8));
             for (Record row : records) {
                 if (Thread.currentThread().isInterrupted()) throw new InterruptedIOException("导出取消，未完成的 ZIP 不可用于恢复");
-                if (!git) put(zip, "originals/" + row.id + ".original", original(row.id));
+                if (!git) putOriginal(zip, row);
                 if (!row.deleted || !git) { put(zip, "public/photos/" + row.id + ".jpg", image(row.id)); put(zip, "public/thumbnails/" + row.id + ".jpg", thumb(row.id)); }
             }
         }
     }
     private static void put(ZipOutputStream zip, String name, byte[] bytes) throws IOException { zip.putNextEntry(new ZipEntry(name)); zip.write(bytes); zip.closeEntry(); }
+    private void putOriginal(ZipOutputStream zip, Record row) throws Exception {
+        zip.putNextEntry(new ZipEntry("originals/" + row.id + ".original"));
+        MessageDigest digest = MessageDigest.getInstance("SHA-256"); long size = 0;
+        try (InputStream input = openOriginal(row)) {
+            byte[] b = new byte[65536]; int n;
+            while ((n = input.read(b)) != -1) {
+                if (Thread.currentThread().isInterrupted()) throw new InterruptedIOException("备份已取消");
+                size += n; if (size > MAX_FILE) throw new IOException("原图超过 25MB 限制");
+                digest.update(b, 0, n); zip.write(b, 0, n);
+            }
+        }
+        StringBuilder hash = new StringBuilder(); for (byte b : digest.digest()) hash.append(String.format(Locale.ROOT, "%02x", b & 255));
+        if (!row.id.equals("mobile-" + hash)) throw new IOException("原图内容已改变：" + row.photo.optString("title") + "；备份不完整，请重新导入原图");
+        zip.closeEntry();
+    }
     private static void put(ZipOutputStream zip, String name, File file) throws IOException {
         zip.putNextEntry(new ZipEntry(name)); try (InputStream input = new FileInputStream(file)) { byte[] b = new byte[65536]; int n; while ((n = input.read(b)) != -1) zip.write(b, 0, n); } zip.closeEntry();
     }
@@ -276,7 +352,7 @@ public final class PhotoStore extends SQLiteOpenHelper {
                 if (name.matches("originals/mobile-[a-f0-9]{64}\\.original")) {
                     String id = name.substring(10, name.length() - 9); JSONObject row = records.get(id);
                     if (row == null || !seen.add(id)) throw new IOException("备份原片记录不匹配");
-                    ImportResult result = importPhoto(zip, row.optString("name"), row.optString("mime"), 0, id, row);
+                    ImportResult result = importPhoto(zip, row.optString("name"), row.optString("mime"), 0, id, row, null);
                     if (result.status.equals("duplicate")) duplicate++; else imported++;
                     progress.update(imported + duplicate, "恢复 " + (imported + duplicate) + " / " + records.size());
                 } else {

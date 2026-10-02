@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Only in the disposable test APK; never shipped in the private release. -->
+    <application>
+        <provider android:name="com.hhs.photography.ReferenceFixtureProvider"
+            android:authorities="com.hhs.photography.offline.test.references"
+            android:exported="false" android:grantUriPermissions="true" />
+        <activity android:name="com.hhs.photography.ReferenceGrantActivity" android:exported="true" />
+    </application>
+</manifest>
