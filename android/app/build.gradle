@@ -4,12 +4,25 @@ android {
     namespace 'com.hhs.photography'
     compileSdk 36
     defaultConfig {
-        applicationId 'com.hhs.photography'
+        applicationId 'com.hhs.photography.offline'
         minSdk 26
         targetSdk 36
-        versionCode 1
-        versionName '1.0'
+        versionCode 100 + (System.getenv('GITHUB_RUN_NUMBER')?.toInteger() ?: 2)
+        versionName '2.0-offline'
+        testInstrumentationRunner 'com.hhs.photography.OfflineInstrumentation'
     }
+    signingConfigs {
+        privateRelease {
+            if (System.getenv('HHS_KEYSTORE_FILE')) {
+                storeFile file(System.getenv('HHS_KEYSTORE_FILE'))
+                storePassword System.getenv('HHS_SIGNING_PASSWORD')
+                keyAlias 'photography-offline'
+                keyPassword System.getenv('HHS_SIGNING_PASSWORD')
+                storeType 'PKCS12'
+            }
+        }
+    }
+    buildTypes { release { signingConfig signingConfigs.privateRelease } }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17

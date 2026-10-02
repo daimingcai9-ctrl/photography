@@ -56,3 +56,4 @@ android/**/build/
 *.apk
 *.jks
 *.keystore
+*.p12

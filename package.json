@@ -8,6 +8,7 @@
     "dev": "next dev --webpack",
     "studio": "node --import tsx scripts/local-studio.ts",
     "photos:sync": "node --import tsx scripts/sync-photos.ts",
+    "photos:import": "node --import tsx scripts/import-mobile.ts",
     "dev:turbo": "next dev",
     "build": "next build --webpack && tsx scripts/build-marker.ts",
     "start": "wrangler pages dev out --ip 127.0.0.1 --port 3000 --r2 PHOTO_BUCKET",
@@ -16,7 +17,8 @@
     "upload-server": "tsx scripts/upload-server.ts",
     "test": "node --import tsx --test tests/*.test.ts",
     "cf:dev": "wrangler pages dev out --ip 127.0.0.1 --port 8788 --r2 PHOTO_BUCKET",
-    "android:build": "gradle -p android assembleDebug"
+    "android:build": "gradle -p android assembleDebug",
+    "android:signing": "node --import tsx scripts/android-signing.ts"
   },
   "dependencies": {
     "exifr": "^7.1.3",

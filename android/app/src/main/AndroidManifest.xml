@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.INTERNET" />
-    <application android:label="光影视界 · 私人相册" android:icon="@drawable/ic_camera"
+    <!-- Offline app: no internet or broad media/storage permission. -->
+    <application android:label="光影视界 · 离线相册" android:icon="@drawable/ic_camera"
         android:theme="@android:style/Theme.Material.NoActionBar" android:allowBackup="false"
         android:usesCleartextTraffic="false" android:enableOnBackInvokedCallback="true">
-        <activity android:name=".MainActivity" android:exported="true">
+        <activity android:name=".MainActivity" android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

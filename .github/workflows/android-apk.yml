@@ -9,7 +9,7 @@ permissions:
 jobs:
   apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -25,10 +25,51 @@ jobs:
           gradle-version: '8.13'
       - name: Install Android SDK
         run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
-      - name: Build personal sideload APK
-        run: gradle -p android assembleDebug --no-daemon
+      - name: Prepare persistent private signing key
+        env:
+          SIGNING_KEY: ${{ secrets.HHS_ANDROID_KEYSTORE }}
+        run: |
+          test -n "$SIGNING_KEY" || { echo 'Missing private APK signing secret'; exit 1; }
+          printf '%s' "$SIGNING_KEY" | base64 --decode > "$RUNNER_TEMP/offline-signing.p12"
+          chmod 600 "$RUNNER_TEMP/offline-signing.p12"
+      - name: Build signed offline APK and device tests
+        env:
+          HHS_KEYSTORE_FILE: ${{ runner.temp }}/offline-signing.p12
+          HHS_SIGNING_PASSWORD: ${{ secrets.HHS_ANDROID_SIGNING_PASSWORD }}
+        run: gradle -p android assembleRelease assembleDebug assembleDebugAndroidTest lintRelease --no-daemon
+      - name: Enable KVM for the disposable test emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Remove signing material from runner before emulator tests
+        if: always()
+        run: rm -f "$RUNNER_TEMP/offline-signing.p12"
+      - name: Verify independent offline library on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -memory 1536 -camera-back none -camera-front none
+          script: |
+            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+            adb install -r android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            adb shell svc wifi disable
+            adb shell svc data disable
+            adb shell am instrument -w com.hhs.photography.offline.test/com.hhs.photography.OfflineInstrumentation | tee offline-test-results.txt
+            grep -q 'OFFLINE_TESTS_OK' offline-test-results.txt
+            adb shell am force-stop com.hhs.photography.offline
+            adb shell monkey -p com.hhs.photography.offline -c android.intent.category.LAUNCHER 1
+            adb shell screencap -p /sdcard/offline-gallery.png
+            adb pull /sdcard/offline-gallery.png offline-gallery.png
+      - name: Name installable APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk photography-offline.apk
       - uses: actions/upload-artifact@v4
         with:
           name: photography-private-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            photography-offline.apk
+            offline-test-results.txt
+            offline-gallery.png
           retention-days: 30
