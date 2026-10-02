@@ -62,6 +62,7 @@
       if (!data.busy && data.message) toast(data.message);
     }
     if (message.event === "errors") showText("部分照片未导入",(data.message || "")+"\n\n成功项已保存。可重新选择失败照片，已导入照片不会重复入库。");
+    if (message.event === "uiUpdate") renderUpdate(data);
   }
   window.addEventListener("message",(event) => {
     // Native postWebMessage targets our exact HTTPS origin; CSP disallows every iframe.
@@ -96,6 +97,15 @@
   function nativeButton(id,action,data={}) { $(id).dataset.nativeAction=action; $(id).addEventListener("click",() => { if (!state.busy) { haptic(); run(action,data); } }); }
   nativeButton("top-import","pick"); nativeButton("home-import","pick"); nativeButton("empty-import","pick"); nativeButton("studio-import","pick");
   nativeButton("studio-files","pick",{files:true}); nativeButton("studio-backup","backup"); nativeButton("studio-restore","restoreBackup"); nativeButton("studio-git","git"); nativeButton("studio-website","website");
+  nativeButton("studio-check-update","checkUi"); nativeButton("studio-apply-update","applyUi"); nativeButton("studio-rollback-update","rollbackUi");
+  function renderUpdate(data) {
+    $("update-source").textContent=data.source==="hot" ? "已热更新" : "内置界面";
+    $("update-release").textContent="当前界面 · "+(data.currentRelease || "随 APK 安装");
+    $("update-message").textContent=data.message || "只更新界面，不上传照片。";
+    $("update-notes").hidden=!data.pendingVersion;
+    $("update-notes").textContent=data.pendingVersion ? "待应用 · "+data.pendingRelease+"\n"+(data.notes || "界面优化与修复") : "";
+    $("studio-apply-update").hidden=!data.pendingVersion; $("studio-rollback-update").hidden=!data.canRollback;
+  }
   $("brand-home").addEventListener("click",() => navigate("home")); $("home-gallery").addEventListener("click",() => navigate("gallery")); $("home-all-colors").addEventListener("click",() => colorSelect(""));
   document.querySelectorAll(".bottom-nav button").forEach((item) => item.addEventListener("click",() => navigate(item.dataset.page)));
   function renderHome() {
@@ -304,7 +314,7 @@
     }); if (state.trash.length>100) content.append(node("p","sheet-copy","先显示 100 张，处理后可以查看下一批。")); openSheet("回收站 · "+state.trash.length+" 张",content,"A SECOND CHANCE");
   }
   $("studio-trash").onclick=showTrash;
-  $("studio-help").onclick=() => showText("关于你的私人相册","新导入只保存系统原图的长期读取引用、图片信息、2560px 展示缓存和 400px 缩略图，不保存原片副本。应用内独立存储与电脑、公开网站无自动同步。\n\n每批最多 100 张，单张 25MB / 6400 万像素，逐张导入。HEIC / AVIF 取决于系统解码。缺失的 EXIF 无法恢复，可手动补录。系统或相册提供者可能隐藏 GPS，不会绕过。\n\n请保留原片。删除 / 移动原图、撤销授权或系统清理授权后可能失联；详情会标记仅显示缓存，重新选择相同内容的原文件可修复。云端照片取决于提供者，不保证断网可读原图。\n\n旧版独立副本和编辑继续保留。完整备份会把可读取的原片复制进 ZIP，含回收站；ZIP 未加密，原片可能含精确 GPS。失联或原图变更时会拒绝不完整备份，不能用缓存冒充原片。恢复会创建应用私有副本，不重建系统引用。\n\n卸载 / 清除数据会删除引用、编辑、缓存和旧副本，不会删除系统原片。覆盖升级前建议备份，不要先卸载。\n\nGit 发布包只含展示图和网站元数据，不是完整备份，也不会自动公开。分享只发送去 EXIF 的展示图，系统地图只在你确认后接收坐标。\n\n界面与地图资源都在 APK 内，不申请网络或整个相册权限。动效跟随系统动画设置；进入后台暂停。");
+  $("studio-help").onclick=() => showText("关于你的私人相册","新导入只保存系统原图的长期读取引用、图片信息、2560px 展示缓存和 400px 缩略图，不保存原片副本。应用内独立存储与电脑、公开网站无自动同步。\n\n每批最多 100 张，单张 25MB / 6400 万像素，逐张导入。HEIC / AVIF 取决于系统解码。缺失的 EXIF 无法恢复，可手动补录。系统或相册提供者可能隐藏 GPS，不会绕过。\n\n请保留原片。删除 / 移动原图、撤销授权或系统清理授权后可能失联；详情会标记仅显示缓存，重新选择相同内容的原文件可修复。云端照片取决于提供者，不保证断网可读原图。\n\n旧版独立副本和编辑继续保留。完整备份会把可读取的原片复制进 ZIP，含回收站；ZIP 未加密，原片可能含精确 GPS。失联或原图变更时会拒绝不完整备份，不能用缓存冒充原片。恢复会创建应用私有副本，不重建系统引用。\n\n卸载 / 清除数据会删除引用、编辑、缓存和旧副本，不会删除系统原片。覆盖升级前建议备份，不要先卸载。\n\nGit 发布包只含展示图和网站元数据，不是完整备份，也不会自动公开。分享只发送去 EXIF 的展示图，系统地图只在你确认后接收坐标。\n\n界面与地图资源随 APK 安装。仅在你点击检查更新并确认后，原生更新器连接固定 HTTPS 网站下载签名界面包；不上传照片、坐标或原图引用。更新后仍可离线使用，启动异常自动回退，也可在管理页手动回退。不申请整个相册权限。动效跟随系统动画设置；进入后台暂停。");
 
   function renderAnalytics() {
     const photos=state.photos,locationCounts=countBy(photos,(p) => p.location.name),cameraCounts=countBy(photos,(p) => p.camera),colorCounts=countBy(photos,(p) => p.colorCategory),summary=$("analytics-summary"); summary.replaceChildren();
@@ -389,5 +399,5 @@
     pause(paused){document.body.classList.toggle("paused",paused);},
     debug(){return {ready:state.ready,page:state.page,photoCount:state.photos.length,trashCount:state.trash.length,detail:state.detail,busy:state.busy,renderedCards:document.querySelectorAll(".photo-card").length,filteredCount:state.filtered.length,motion:state.motion};}
   };
-  request("bootstrap").then((data) => {state.motion=data.motion!==false && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;document.body.classList.toggle("reduced-motion",!state.motion);$("app-version").textContent=data.version || "私人相册";snapshot(data);state.ready=true;}).catch((error) => showText("相册暂未连接",error.message+"\n请重新打开应用。此界面只能在 APK 中操作手机相册。"));
+  request("bootstrap").then((data) => {state.motion=data.motion!==false && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;document.body.classList.toggle("reduced-motion",!state.motion);$("app-version").textContent=data.version || "私人相册";snapshot(data);renderUpdate(data.uiUpdate || {});state.ready=true;return request("uiReady");}).catch((error) => showText("相册暂未连接",error.message+"\n请重新打开应用。此界面只能在 APK 中操作手机相册。"));
 })();

@@ -7,7 +7,8 @@ const originals=JSON.parse(await readFile(path.join(root,"data/photos.json"),"ut
 const photos=originals.map((p)=>({...p,referenced:true,width:p.width||1600,height:p.height||1200,image:`/media/image/${p.id}.jpg`,thumb:`/media/thumb/${p.id}.jpg`}));
 const bridge=`window.addEventListener('DOMContentLoaded',()=>{
  let photos=${JSON.stringify(photos)},trash=[];
- const snapshot=()=>({photos,trash,bytes:photos.length*180000,busy:false,motion:true,version:'3.0 · 本机视觉预览'});
+ let uiUpdate={currentRelease:'视觉预览',source:'builtin',pendingVersion:0,canRollback:false,message:'只更新界面，不上传照片。'};
+ const snapshot=()=>({photos,trash,bytes:photos.length*180000,busy:false,motion:true,version:'3.2 · 本机视觉预览',uiUpdate});
  const channel=new MessageChannel();channel.port1.onmessage=({data})=>{
   const msg=JSON.parse(data);let answer={},error;
   const row=photos.find(p=>p.id===msg.data.id);
@@ -18,7 +19,10 @@ const bridge=`window.addEventListener('DOMContentLoaded',()=>{
    case 'trash':if(row){photos=photos.filter(p=>p!==row);trash.push(row);}answer=snapshot();break;
    case 'restore':{const p=trash.find(p=>p.id===msg.data.id);if(p){trash=trash.filter(x=>x!==p);photos.push(p);}answer=snapshot();break;}
    case 'erase':trash=trash.filter(p=>p.id!==msg.data.id);answer=snapshot();break;
-   case 'haptic':case 'closePreview':break;
+   case 'uiReady':case 'haptic':case 'closePreview':break;
+   case 'checkUi':uiUpdate={...uiUpdate,pendingVersion:2,pendingRelease:'预览测试 · 2',notes:'签名验证成功（仅模拟）',message:'预览模拟：界面已下载，等待应用'};channel.port1.postMessage(JSON.stringify({event:'uiUpdate',data:uiUpdate}));break;
+   case 'applyUi':uiUpdate={...uiUpdate,currentRelease:uiUpdate.pendingRelease,source:'hot',pendingVersion:0,canRollback:true,message:'预览模拟：已应用，不会实际下载或写文件'};channel.port1.postMessage(JSON.stringify({event:'uiUpdate',data:uiUpdate}));break;
+   case 'rollbackUi':uiUpdate={...uiUpdate,currentRelease:'视觉预览',source:'builtin',pendingVersion:0,canRollback:false,message:'预览模拟：已回退'};channel.port1.postMessage(JSON.stringify({event:'uiUpdate',data:uiUpdate}));break;
    default:error='浏览器仅供视觉预览，此操作请在 APK 中进行。';
   }
   channel.port1.postMessage(JSON.stringify({id:msg.id,ok:!error,data:answer,error}));

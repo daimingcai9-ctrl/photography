@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['android/**', '.github/workflows/android-apk.yml']
+    paths: ['android/**', '!android/app/src/main/assets/ui/**', '!android/app/src/main/assets/updates/builtin.json', '.github/workflows/android-apk.yml']
 permissions:
   contents: read
 jobs:
@@ -41,6 +41,7 @@ jobs:
           HHS_KEYSTORE_FILE: ${{ runner.temp }}/offline-signing.p12
           HHS_SIGNING_PASSWORD: ${{ secrets.HHS_ANDROID_SIGNING_PASSWORD }}
         run: |
+          node scripts/verify-android-ui.mjs
           node scripts/prepare-android-fixtures.mjs
           gradle -p android assembleRelease assembleDebug assembleDebugAndroidTest lintRelease --no-daemon
       - name: Enable KVM for the disposable test emulator
@@ -74,6 +75,13 @@ jobs:
             grep -q 'OFFLINE_TESTS_OK' offline-test-results.txt
             mkdir -p ui-screenshots
             for page in home gallery detail map analytics studio; do adb exec-out run-as com.hhs.photography.offline cat files/ui-$page.png > ui-screenshots/ui-$page.png; test -s ui-screenshots/ui-$page.png; done
+            adb shell svc wifi enable
+            adb shell svc data enable
+            sleep 5
+            timeout 90s adb shell am instrument -w -e updateNetwork true com.hhs.photography.offline.test/com.hhs.photography.OfflineInstrumentation | tee ui-update-network-results.txt
+            grep -q 'UI_UPDATE_NETWORK_OK' ui-update-network-results.txt
+            adb shell svc wifi disable
+            adb shell svc data disable
             adb uninstall com.hhs.photography.offline.test
             adb uninstall com.hhs.photography.offline
             adb install android/app/build/outputs/apk/release/app-release.apk
@@ -90,6 +98,7 @@ jobs:
           name: android-diagnostics-${{ matrix.android-api }}
           path: |
             offline-test-results.txt
+            ui-update-network-results.txt
             offline-device-log.txt
             release-window.xml
             ui-screenshots/
@@ -102,6 +111,7 @@ jobs:
           path: |
             photography-offline.apk
             offline-test-results.txt
+            ui-update-network-results.txt
             offline-gallery.png
             ui-screenshots/
           retention-days: 30

@@ -1,0 +1,11 @@
+import { readFile } from "node:fs/promises";
+import { createPublicKey } from "node:crypto";
+import path from "node:path";
+import { verifyUiUpdate, digest, UI_FILES } from "./lib/android-ui-update.mjs";
+const root = process.cwd(), assets = path.join(root, "android/app/src/main/assets");
+const key = createPublicKey({ key: Buffer.from((await readFile(path.join(assets, "updates/public-key.txt"), "utf8")).trim(), "base64"), format: "der", type: "spki" });
+const { pack, files } = verifyUiUpdate(await readFile(path.join(root, "public/app-updates/stable.json")), key);
+const builtin = JSON.parse(await readFile(path.join(assets, "updates/builtin.json"), "utf8"));
+if (pack.version !== builtin.version || pack.protocol !== builtin.protocol || pack.release !== builtin.release) throw Error("Bundled UI version differs from signed release");
+for (const name of UI_FILES) if (digest(await readFile(path.join(assets, "ui", name))) !== digest(files.get(name))) throw Error("UI release is stale: run pnpm android:publish-ui before committing UI changes");
+console.log(`Verified signed UI ${pack.release}, native protocol ${pack.protocol}.`);

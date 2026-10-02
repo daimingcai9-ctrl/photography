@@ -16,3 +16,6 @@
 
 /build-info.json
   Cache-Control: no-store
+
+/app-updates/*
+  Cache-Control: no-store

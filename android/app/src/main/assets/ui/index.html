@@ -77,6 +77,13 @@
         <button id="studio-git" class="action-row"><span class="action-icon violet"><svg><use href="#i-git"/></svg></span><span><strong>导出 Git 发布包</strong><small>保留同步接口，照片不会自动公开</small></span><svg><use href="#i-chevron"/></svg></button>
       </div>
       <div class="action-list final-actions"><button id="studio-website" class="action-row"><span class="action-icon blue"><svg><use href="#i-external"/></svg></span><span><strong>打开公开网站</strong><small>交给系统浏览器，不带私人照片</small></span><svg><use href="#i-chevron"/></svg></button><button id="studio-help" class="action-row"><span class="action-icon mint"><svg><use href="#i-shield"/></svg></span><span><strong>隐私与使用说明</strong><small>关于引用、缓存、授权和备份</small></span><svg><use href="#i-chevron"/></svg></button></div>
+      <div class="studio-card update-card" aria-label="界面热更新">
+        <div class="section-heading"><h2>界面热更新</h2><span class="glass-pill" id="update-source">内置界面</span></div>
+        <p id="update-release">正在读取界面版本…</p><p id="update-message" role="status" aria-live="polite">只更新界面，不上传照片。</p>
+        <p id="update-notes" hidden></p>
+        <div class="update-actions"><button id="studio-check-update" class="button secondary">检查更新</button><button id="studio-apply-update" class="button primary" hidden>应用更新</button><button id="studio-rollback-update" class="button secondary" hidden>回退界面</button></div>
+        <p class="update-hint">下载后仍可离线使用。权限与原生功能升级仍需要覆盖安装新版 APK。</p>
+      </div>
       <div class="studio-footer"><img src="brand.svg" alt=""/><span>用色彩定义每一帧。</span><small>DESIGNED FOR YOUR LIGHT</small></div>
     </section>
   </main>

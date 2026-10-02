@@ -36,6 +36,13 @@ public final class MainActivity extends Activity {
         new ArrayBlockingQueue<>(32), new ThreadPoolExecutor.AbortPolicy());
     private final AtomicInteger pending = new AtomicInteger();
     private PhotoStore store;
+    private UiUpdates updates;
+    private volatile UiUpdates.Pack uiPack;
+    private final android.os.Handler uiHandler=new android.os.Handler(android.os.Looper.getMainLooper());
+    private boolean uiReady;
+    private final Runnable startupGuard=() -> {
+        if (!uiReady && uiPack!=null && !isFinishing() && !isDestroyed()) recoverUi();
+    };
     private WebView web;
     private WebMessagePort port;
     private volatile boolean trusted, busy;
@@ -49,7 +56,7 @@ public final class MainActivity extends Activity {
     @SuppressLint("SetJavaScriptEnabled") // Only bundled, CSP-restricted UI; no JavascriptInterface.
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        try { store = new PhotoStore(this); }
+        try { store = new PhotoStore(this); updates=new UiUpdates(this); uiPack=updates.beginSession(); }
         catch (Exception error) { new AlertDialog.Builder(this).setMessage("相册打开失败：" + message(error)).setPositiveButton("关闭", (d,w) -> finish()).show(); return; }
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE
             | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
@@ -88,7 +95,10 @@ public final class MainActivity extends Activity {
                 applyInsets();
             }
             @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
-                trusted=false; Toast.makeText(MainActivity.this,"界面进程已退出，照片仍保留；请重新打开应用",Toast.LENGTH_LONG).show(); finish(); return true;
+                trusted=false;
+                if (uiPack!=null) recoverUi();
+                else { Toast.makeText(MainActivity.this,"界面进程已退出，照片仍保留；请重新打开应用",Toast.LENGTH_LONG).show(); finish(); }
+                return true;
             }
         });
         host.addView(web,new FrameLayout.LayoutParams(-1,-1)); setContentView(host);
@@ -104,8 +114,14 @@ public final class MainActivity extends Activity {
             applyInsets(); return insets;
         });
         host.requestApplyInsets(); web.loadUrl(PAGE);
+        if (uiPack!=null) uiHandler.postDelayed(startupGuard,20000);
         if (Build.VERSION.SDK_INT >= 34) ModernBack.register(this);
         else if (Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(0,this::back);
+    }
+    private void recoverUi() {
+        uiHandler.removeCallbacks(startupGuard);
+        try { updates.rollback("界面启动失败，已自动回退"); Toast.makeText(this,"界面已回退，私人照片未改动",Toast.LENGTH_LONG).show(); recreate(); }
+        catch (Exception error) { Toast.makeText(this,"请重新打开相册以恢复界面",Toast.LENGTH_LONG).show(); finish(); }
     }
     private void applyInsets() {
         if (!trusted || web == null) return; float density=getResources().getDisplayMetrics().density;
@@ -123,7 +139,7 @@ public final class MainActivity extends Activity {
             String path=uri.getPath();
             if (path != null && path.matches("/ui/(index\\.html|app\\.js|style\\.css|world-land\\.geojson|brand\\.svg)")) {
                 String mime=path.endsWith("html") ? "text/html" : path.endsWith("js") ? "application/javascript" : path.endsWith("css") ? "text/css" : path.endsWith("svg") ? "image/svg+xml" : "application/json";
-                return response(mime,200,getAssets().open(path.substring(1)));
+                return response(mime,200,uiPack==null ? getAssets().open(path.substring(1)) : uiPack.open(path.substring(4)));
             }
             if (path != null && path.matches("/media/(thumb|image|preview)/mobile-[a-f0-9]{64}\\.jpg")) {
                 String id=path.substring(path.lastIndexOf('/') + 1,path.length() - 4);
@@ -153,10 +169,27 @@ public final class MainActivity extends Activity {
         } catch (Exception error) { if (!requestId.isEmpty()) reply(requestId,null,message(error)); }
     }
     private JSONObject command(String action,JSONObject data) throws Exception {
-        if (busy && !action.equals("bootstrap") && !action.equals("list") && !action.equals("haptic")) throw new IOException("正在处理照片，请等待完成");
+        if (busy && !action.equals("bootstrap") && !action.equals("list") && !action.equals("haptic") && !action.equals("uiReady")) throw new IOException("正在处理照片，请等待完成");
         JSONObject result=new JSONObject();
         switch (action) {
-            case "bootstrap": return snapshot().put("motion",ValueAnimator.areAnimatorsEnabled()).put("version","3.1 · 私人相册");
+            case "bootstrap": return snapshot().put("motion",ValueAnimator.areAnimatorsEnabled()).put("version","3.2 · 私人相册").put("uiUpdate",updates.status());
+            case "uiReady": updates.ready(); ui(() -> { uiReady=true; uiHandler.removeCallbacks(startupGuard); }); return result;
+            case "checkUi": ui(() -> {
+                if (busy) return;
+                new AlertDialog.Builder(this).setTitle("检查界面更新")
+                    .setMessage("仅连接 photography-hhs.pages.dev 下载并校验签名界面包。服务器会看到普通网络请求，但不会发送照片、坐标、原图引用或相册数据。断网不影响使用。")
+                    .setNegativeButton("取消",null).setPositiveButton("检查",(d,w) -> runUpdate(false,false)).show();
+            }); return result;
+            case "applyUi": case "rollbackUi": {
+                boolean rollback=action.equals("rollbackUi"); JSONObject info=updates.status();
+                if (!rollback && info.optLong("pendingVersion")==0) throw new IOException("没有待应用的更新");
+                if (rollback && !info.optBoolean("canRollback")) throw new IOException("当前使用 APK 内置界面");
+                ui(() -> { if (busy) return;
+                    new AlertDialog.Builder(this).setTitle(rollback?"回退界面":"应用已验证的界面")
+                        .setMessage((rollback?"恢复上一版可用界面或 APK 内置界面。":info.optString("pendingRelease")+"\n"+info.optString("notes"))+"\n相册界面将重启，照片和编辑不变。")
+                        .setNegativeButton("取消",null).setPositiveButton("继续",(d,w) -> runUpdate(true,rollback)).show();
+                }); return result;
+            }
             case "list": return snapshot();
             case "preview": {
                 PhotoStore.Record row=require(data.getString("id"),false); Bitmap bitmap=null;
@@ -202,6 +235,20 @@ public final class MainActivity extends Activity {
             case "exit": ui(this::finish); return result;
             default: throw new IOException("不支持的操作");
         }
+    }
+    private void runUpdate(boolean reload,boolean rollback) {
+        if (busy || isFinishing() || isDestroyed()) return;
+        progress(true,reload?"正在切换界面…":"正在检查并验证界面更新…",0,0);
+        try { worker.execute(() -> {
+            boolean changed=false;
+            try {
+                if (!reload) updates.check(); else if (rollback) updates.rollback("已手动回退界面"); else updates.apply();
+                event("uiUpdate",updates.status()); changed=reload;
+            } catch (Exception error) { try { event("uiUpdate",updates.status().put("message","更新未完成："+message(error)+"；继续使用当前界面")); } catch (Exception ignored) { }
+                ui(() -> Toast.makeText(this,"更新未完成，原有界面和照片保留",Toast.LENGTH_LONG).show());
+            } finally { progress(false,"",0,0); }
+            if (changed) ui(this::recreate);
+        }); } catch (RejectedExecutionException error) { progress(false,"",0,0); }
     }
     private PhotoStore.Record require(String id,boolean deleted) throws Exception {
         PhotoStore.Record row=store.find(id); if (row == null || row.deleted != deleted) throw new IOException("照片不存在或状态已改变"); return row;
@@ -351,6 +398,7 @@ public final class MainActivity extends Activity {
     @Override protected void onPause() { if (web != null) { web.onPause(); web.evaluateJavascript("window.Album&&window.Album.pause(true)",null); } super.onPause(); }
     @Override protected void onResume() { super.onResume(); if (web != null) { web.onResume(); web.evaluateJavascript("window.Album&&window.Album.pause(false)",null); } }
     @Override protected void onDestroy() {
+        uiHandler.removeCallbacks(startupGuard);
         trusted=false; if (port != null) port.close(); previewBytes=null; if (web != null) { web.stopLoading(); web.destroy(); }
         worker.shutdownNow(); if (store != null) new Thread(() -> { try { worker.awaitTermination(30,TimeUnit.SECONDS); } catch (InterruptedException ignored) {} store.close(); }).start();
         super.onDestroy();

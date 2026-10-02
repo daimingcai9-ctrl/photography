@@ -21,8 +21,12 @@ import java.util.zip.*;
 
 /** Framework-only device regression tests: no additional runtime/test dependencies. */
 public final class OfflineInstrumentation extends Instrumentation {
-    @Override public void onCreate(Bundle args) { super.onCreate(args); start(); }
+    private boolean networkOnly;
+    @Override public void onCreate(Bundle args) { super.onCreate(args); networkOnly=args!=null&&"true".equals(args.getString("updateNetwork")); start(); }
     private static void check(boolean condition, String message) { if (!condition) throw new AssertionError(message); }
+    private static String albumState(PhotoStore store) throws Exception {
+        JSONArray rows=new JSONArray(); for (PhotoStore.Record row:store.list(false)) rows.put(new JSONObject().put("id",row.id).put("photo",row.photo)); return rows.toString();
+    }
     private void stage(String message) { Bundle status = new Bundle(); status.putString("stream", "TEST_STAGE: " + message + "\n"); sendStatus(0, status); }
     private void fixture(String operation) throws Exception {
         stage("provider " + operation);
@@ -102,8 +106,17 @@ public final class OfflineInstrumentation extends Instrumentation {
         js(activity,"(Album.back(),Album.navigate('map'))");waitJs(activity,"Album.debug().page==='map'&&document.getElementById('map-canvas').width>0");screenshot("map");
         js(activity,"Album.navigate('analytics')");waitJs(activity,"document.querySelectorAll('.stat-card').length===4");screenshot("analytics");
         js(activity,"Album.navigate('studio')");screenshot("studio");
+        check("true".equals(js(activity,"!!document.getElementById('studio-check-update')&&document.getElementById('studio-apply-update').hidden")),"Update controls missing or staged unexpectedly");
         check("true".equals(js(activity,"getComputedStyle(document.querySelector('.bottom-nav')).bottom!=='0px'")),"Navigation safe inset lost");
         js(activity,"Album.pause(true)");check("true".equals(js(activity,"document.body.classList.contains('paused')")),"Pause doesn't stop UI animation");js(activity,"Album.pause(false)");
+        stage("verified hot resource session + real bridge/photo preservation");
+        UiUpdates.Pack hot=UiUpdateTests.run(getTargetContext());
+        java.lang.reflect.Field session=MainActivity.class.getDeclaredField("uiPack");session.setAccessible(true);
+        runOnMainSync(() -> { try { session.set(activity,hot);activity.uiView().reload(); } catch (Exception error) { throw new AssertionError(error); } });
+        waitJs(activity,"window.HotUpdateProbe==='verified-test'&&!!window.Album&&Album.debug().ready&&Album.debug().photoCount===6");
+        js(activity,"Album.navigate('studio')");check("true".equals(js(activity,"document.getElementById('stored-count').textContent==='6'")),"Hot UI lost private album");
+        runOnMainSync(() -> { try { session.set(activity,null);activity.uiView().reload(); } catch (Exception error) { throw new AssertionError(error); } });
+        waitJs(activity,"!window.HotUpdateProbe&&!!window.Album&&Album.debug().ready&&Album.debug().photoCount===6");
         runOnMainSync(activity::finish);waitForIdleSync();
         // Emulators only: prove shared display is not a raw copy; deleting never touches provider.
         try(PhotoStore main=new PhotoStore(getTargetContext())) {
@@ -118,6 +131,17 @@ public final class OfflineInstrumentation extends Instrumentation {
         }
     }
     @Override public void onStart() {
+        if (networkOnly) {
+            Bundle networkResult=new Bundle();
+            try (PhotoStore main=new PhotoStore(getTargetContext())) {
+                String before=albumState(main); long bytes=main.bytes();
+                UiUpdates updater=new UiUpdates(getTargetContext());updater.check();
+                check(before.equals(albumState(main))&&bytes==main.bytes(),"UI download modified private album");
+                networkResult.putString("stream","UI_UPDATE_NETWORK_OK: fixed HTTPS endpoint, pinned signature, compatible resources, private album unchanged; "+updater.status()+"\n");
+                finish(Activity.RESULT_OK,networkResult);
+            } catch (Throwable error) { networkResult.putString("stream","UI_UPDATE_NETWORK_FAILED: "+error+"\n");finish(Activity.RESULT_CANCELED,networkResult); }
+            return;
+        }
         Bundle result = new Bundle(); PhotoStore store = null, restored = null;
         try {
             stage("legacy imports and v1 upgrade");
@@ -216,9 +240,12 @@ public final class OfflineInstrumentation extends Instrumentation {
             stage("requested permissions " + Arrays.toString(permissions));
             check(permissions != null && Arrays.asList(permissions).contains(android.Manifest.permission.ACCESS_MEDIA_LOCATION),"Photo EXIF permission is missing");
             // Android automatically adds this selected-only permission when ACCESS_MEDIA_LOCATION
-            // is declared. It does NOT grant broad media access or network/live location access.
+            // is declared. Only native signed UI downloads use INTERNET; WebView network stays blocked.
             for (String permission : permissions) check(permission.equals(android.Manifest.permission.ACCESS_MEDIA_LOCATION)
+                || permission.equals(android.Manifest.permission.INTERNET)
                 || permission.equals("android.permission.READ_MEDIA_VISUAL_USER_SELECTED"),"Unexpected permission: " + permission);
+            stage("signed UI verification, atomic activation, restart recovery, anti-replay");
+            UiUpdateTests.run(getTargetContext());
             uiTests();
             file.delete(); result.putString("stream", "OFFLINE_TESTS_OK: URI grants, no original copy, reference persistence, revocation, relinking, missing source, portable backup, safe deletion, v1 migration, EXIF, rotation, deduplication, trash, Git export, zip safety, native launch\n");
             finish(Activity.RESULT_OK, result);
